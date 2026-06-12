@@ -1,0 +1,10 @@
+export const TERMS_VERSION = 'alpha-1'
+export const PRIVACY_NOTICE_VERSION = 'alpha-1'
+export const LEGAL_LOCALE = 'tr-TR'
+
+export const TERMS_DOCUMENT_SHA256 =
+  'b5e9215b21ef17bb610b370c7a2460219f1572ab4301c226521255d30e28a2fd'
+export const PRIVACY_NOTICE_DOCUMENT_SHA256 =
+  'c791a73fa778c8fd70c219c1461bf9fa8a7700d33ccc73592f3933ed474fabe5'
+
+export const AGE_DECLARATION_REQUIRED = true

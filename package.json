@@ -1,0 +1,47 @@
+{
+  "name": "client",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "audit:dups": "node ./scripts/dup-audit.mjs",
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@dicebear/collection": "^9.0.0",
+    "@dicebear/core": "^9.0.0",
+    "@livekit/krisp-noise-filter": "^0.4.1",
+    "@pinia/nuxt": "^0.11.3",
+    "@supabase/auth-js": "^2.90.1",
+    "@supabase/functions-js": "^2.90.1",
+    "@supabase/postgrest-js": "^2.90.1",
+    "@supabase/realtime-js": "^2.90.1",
+    "@supabase/storage-js": "^2.90.1",
+    "@supabase/supabase-js": "^2.89.0",
+    "h3": "1.15.11",
+    "livekit-client": "^2.17.0",
+    "nuxt": "^4.2.2",
+    "ofetch": "^1.5.1",
+    "pinia": "^3.0.4",
+    "protobufjs": "^8.6.1",
+    "vue": "^3.5.26",
+    "vue-router": "^5.0.7",
+    "ws": "8.20.1"
+  },
+  "devDependencies": {
+    "@nuxtjs/tailwindcss": "^6.14.0",
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^27.0.1",
+    "protobufjs-cli": "2.5.2",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.28.1+sha512.7d7dbbca9e99447b7c3bf7a73286afaaf6be99251eb9498baefa7d406892f67b879adb3a1d7e687fc4ccc1a388c7175fbaae567a26ab44d1067b54fcb0d6a316"
+}

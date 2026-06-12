@@ -1,0 +1,41 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Node dependencies
+node_modules
+
+# Logs
+logs
+*.log
+
+# Mirrored vendor docs
+doc/**
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# pnpm
+.pnpm-store
+
+
+certs*
+
+# Generated protobuf artifacts (do not commit)
+src/generated/proto/proto.js
+src/generated/proto/proto.d.ts
+src/generated/proto/protobuf.noeval.cjs
+src/generated/proto/protobuf-noeval-runtime.js
+
+docs/docs.livekit.io

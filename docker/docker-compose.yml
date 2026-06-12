@@ -1,0 +1,62 @@
+x-web-node: &web-node
+  image: web-node:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+  working_dir: /app/clients/web
+  ports:
+    - "3000:3000"
+  volumes:
+    - ../../..:/app
+
+services:
+  web-node-dev:
+    <<: *web-node
+    env_file:
+      - ../../../.env
+    networks:
+      default:
+      kergit_default:
+        aliases:
+          - web-node
+    environment:
+      CI: "true"
+      NODE_ENV: "development"
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd /app/clients/web
+        rm -rf .nuxt src/generated/proto
+        pnpm install --frozen-lockfile --reporter=append-only
+        ./docker/generate-proto.sh
+        pnpm dev --host 0.0.0.0
+
+  web-node-prod:
+    <<: *web-node
+    env_file:
+      - ../../../.env
+    networks:
+      default:
+      kergit_default:
+        aliases:
+          - web-node
+    environment:
+      CI: "true"
+      NODE_ENV: "production"
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd /app/clients/web
+        rm -rf .nuxt src/generated/proto
+        pnpm install --frozen-lockfile --reporter=append-only
+        ./docker/generate-proto.sh
+        NODE_ENV=production pnpm build
+        NODE_ENV=production NUXT_HOST=0.0.0.0 NUXT_PORT=3000 pnpm preview
+
+networks:
+  kergit_default:
+    external: true
