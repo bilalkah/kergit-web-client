@@ -3,8 +3,8 @@ set -euo pipefail
 
 DETACHED=0
 BUILD=0
-SERVICE_NAME="nuxt-web-dev"
-IMAGE_NAME="web-base:latest"
+SERVICE_NAME="web-node-dev"
+IMAGE_NAME="web-node:latest"
 
 for arg in "$@"; do
   case "$arg" in
@@ -15,7 +15,7 @@ for arg in "$@"; do
       BUILD=1
       ;;
     --prod)
-      SERVICE_NAME="nuxt-web-prod"
+      SERVICE_NAME="web-node-prod"
       ;;
     *)
       echo "❌ Unknown argument: $arg"
@@ -38,13 +38,15 @@ if [ -f "$ENV_FILE" ]; then
   COMPOSE_ARGS=(--env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}")
 fi
 
-# Shared network for Caddy -> web-app-container resolution.
+# Shared network for Caddy -> web-node resolution.
 docker network inspect kergit_default >/dev/null 2>&1 || docker network create kergit_default >/dev/null 2>&1 || true
 
 # ---- stop previous web service before switching mode ------
 docker compose "${COMPOSE_ARGS[@]}" down --remove-orphans >/dev/null 2>&1 || true
 # Clean both current and legacy container names to avoid name conflicts.
-docker rm -f web-app-container web-dev-container nuxt-dev-container nuxt-prod-container >/dev/null 2>&1 || true
+docker rm -f "${PROJECT_NAME}-web-node-dev-1" "${PROJECT_NAME}-web-node-prod-1" \
+  web-node web-app-container web-dev-container nuxt-dev-container nuxt-prod-container \
+  >/dev/null 2>&1 || true
 
 if [ "$BUILD" -eq 1 ] || ! docker inspect "$IMAGE_NAME" >/dev/null 2>&1; then
   docker compose "${COMPOSE_ARGS[@]}" build "$SERVICE_NAME"

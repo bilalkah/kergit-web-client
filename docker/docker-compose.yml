@@ -1,5 +1,5 @@
-x-web-base: &web-base
-  image: web-base:latest
+x-web-node: &web-node
+  image: web-node:latest
   build:
     context: .
     dockerfile: Dockerfile
@@ -10,15 +10,15 @@ x-web-base: &web-base
     - ../../..:/app
 
 services:
-  nuxt-web-dev:
-    <<: *web-base
+  web-node-dev:
+    <<: *web-node
     env_file:
       - ../../../.env
     networks:
       default:
       kergit_default:
         aliases:
-          - web-app-container
+          - web-node
     environment:
       CI: "true"
     command:
@@ -32,15 +32,15 @@ services:
         ./docker/generate-proto.sh
         pnpm dev --host 0.0.0.0
 
-  nuxt-web-prod:
-    <<: *web-base
+  web-node-prod:
+    <<: *web-node
     env_file:
       - ../../../.env
     networks:
       default:
       kergit_default:
         aliases:
-          - web-app-container
+          - web-node
     environment:
       CI: "true"
     command:
