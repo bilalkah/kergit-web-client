@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
 const props = withDefaults(defineProps<{
   modelValue: boolean
   title?: string
   showBack?: boolean
+  dismissible?: boolean
 }>(), {
   title: '',
   showBack: false,
+  dismissible: true,
 })
 
 const emit = defineEmits<{
@@ -17,7 +21,13 @@ const modalContentRef = ref<HTMLElement | null>(null)
 let previousActiveElement: HTMLElement | null = null
 
 function close() {
+  if (!props.dismissible) return
   emit('update:modelValue', false)
+}
+
+function goBack() {
+  if (!props.dismissible) return
+  emit('back')
 }
 
 function getFocusableElements(): HTMLElement[] {
@@ -122,7 +132,8 @@ watch(
               type="button"
               class="ui-modal-back"
               aria-label="Geri"
-              @click="emit('back')"
+              :disabled="!props.dismissible"
+              @click="goBack"
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
@@ -137,6 +148,7 @@ watch(
               type="button"
               class="ui-modal-close"
               aria-label="Kapat"
+              :disabled="!props.dismissible"
               @click="close"
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -234,6 +246,12 @@ watch(
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08);
   color: #eef4ff;
+}
+
+.ui-modal-back:disabled,
+.ui-modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ui-modal-back {

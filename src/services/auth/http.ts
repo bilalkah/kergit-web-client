@@ -1,6 +1,8 @@
 import { $fetch } from 'ofetch'
-import type { AuthSession } from '@/stores/auth'
-import { toAuthErrorMessage } from '@/src/utils/authErrors'
+import type { AuthSession, AuthUser } from '@/stores/auth'
+import { getAuthErrorStatus, toAuthErrorMessage } from '@/src/utils/authErrors'
+import type { EmailChangeAuthCallbackPayload } from '@/src/utils/authCallback'
+import type { AuthBootstrapResult, FreshSessionResult } from './freshSession'
 
 type AuthSessionResponse = {
   session: AuthSession | null
@@ -20,6 +22,23 @@ type UpdatePasswordPayload = {
   password: string
 }
 
+type UpdateEmailPayload = {
+  email: string
+}
+
+export type UpdateEmailResponse = {
+  ok: true
+  user: AuthUser
+  message: 'confirmation_sent'
+}
+
+export class UnauthenticatedSessionError extends Error {
+  constructor() {
+    super('Authentication required')
+    this.name = 'UnauthenticatedSessionError'
+  }
+}
+
 function requireSession(session: AuthSession | null, fallbackMessage: string): AuthSession {
   if (!session) {
     throw new Error(fallbackMessage)
@@ -29,10 +48,14 @@ function requireSession(session: AuthSession | null, fallbackMessage: string): A
 }
 
 export async function restoreServerSession(): Promise<AuthSession | null> {
-  const response = await $fetch<AuthSessionResponse>('/api/auth/session', {
+  const response = await bootstrapServerSession()
+  return response.status === 'ok' ? response.session : null
+}
+
+export async function bootstrapServerSession(): Promise<AuthBootstrapResult> {
+  return await $fetch<AuthBootstrapResult>('/api/auth/session', {
     timeout: 5000,
   })
-  return response.session
 }
 
 export async function refreshServerSession(): Promise<AuthSession | null> {
@@ -41,6 +64,19 @@ export async function refreshServerSession(): Promise<AuthSession | null> {
   })
 
   return response.session
+}
+
+export async function checkFreshSession(): Promise<FreshSessionResult> {
+  try {
+    return await $fetch<FreshSessionResult>('/api/auth/fresh-session', {
+      timeout: 5000,
+    })
+  } catch (error: unknown) {
+    if (getAuthErrorStatus(error) === 401) {
+      throw new UnauthenticatedSessionError()
+    }
+    throw new Error(toAuthErrorMessage(error, 'generic'))
+  }
 }
 
 export async function loginWithPassword(payload: LoginPayload): Promise<AuthSession> {
@@ -69,6 +105,21 @@ export async function exchangeCallbackSession(payload: TokenExchangePayload): Pr
   }
 }
 
+export async function processEmailChangeAuthCallback(
+  payload: EmailChangeAuthCallbackPayload
+): Promise<AuthSession> {
+  try {
+    const response = await $fetch<AuthSessionResponse>('/api/auth/callback', {
+      method: 'POST',
+      body: payload,
+    })
+
+    return requireSession(response.session, 'E-posta doğrulama dönüşü geçerli bir oturum döndürmedi')
+  } catch (error: unknown) {
+    throw new Error(toAuthErrorMessage(error, 'email-change-callback'))
+  }
+}
+
 export async function logoutServerSession(): Promise<void> {
   await $fetch('/api/auth/logout', {
     method: 'POST',
@@ -83,5 +134,22 @@ export async function updateCurrentPassword(payload: UpdatePasswordPayload): Pro
     })
   } catch (error: unknown) {
     throw new Error(toAuthErrorMessage(error, 'password-update'))
+  }
+}
+
+export async function updateCurrentEmail(payload: UpdateEmailPayload): Promise<UpdateEmailResponse> {
+  try {
+    const response = await $fetch<UpdateEmailResponse>('/api/auth/update-email', {
+      method: 'POST',
+      body: payload,
+    })
+
+    if (!response.ok || response.message !== 'confirmation_sent' || !response.user?.id) {
+      throw new Error('E-posta güncelleme isteği geçerli bir kullanıcı döndürmedi')
+    }
+
+    return response
+  } catch (error: unknown) {
+    throw new Error(toAuthErrorMessage(error, 'email-update'))
   }
 }

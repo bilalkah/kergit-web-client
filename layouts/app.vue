@@ -154,6 +154,13 @@ onMounted(async () => {
     await auth.initPromise
   }
 
+  if (route.query.email_change === 'success') {
+    useToast().show('E-posta adresin başarıyla güncellendi.', 'success')
+    const nextQuery = { ...route.query }
+    delete nextQuery.email_change
+    await router.replace({ path: route.path, query: nextQuery })
+  }
+
   devLog('[layout:app] mounted, auth initialized')
 
   // Only connect if authenticated

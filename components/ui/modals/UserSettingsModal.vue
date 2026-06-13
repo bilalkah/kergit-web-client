@@ -32,7 +32,7 @@ import {
   readStoredVoiceLevel,
   writeStoredVoiceLevel,
 } from '@/src/services/webrtc/utils'
-import { updateCurrentPassword } from '@/src/services/auth/http'
+import { updateCurrentEmail, updateCurrentPassword } from '@/src/services/auth/http'
 import { getPasswordValidationError } from '@/src/utils/password'
 import { userAvatarUrl } from '@/src/utils/avatar'
 import { devError, devWarn } from '@/src/utils/safeLogger'
@@ -46,6 +46,7 @@ import DeleteAccountModal from './DeleteAccountModal.vue'
 import { InputSensitivityMode, NoiseCancellationMethod } from '@/src/services/webrtc/inputHandler'
 import { useAppStore, VideoMode } from '~/stores/app'
 import { useAuthStore } from '~/stores/auth'
+import { useToast } from '~/composables/useToast'
 import { useWebSocket } from '~/composables/useWebSocket'
 
 enum SettingsTab {
@@ -66,6 +67,8 @@ const emit = defineEmits<{
 
 const app = useAppStore()
 const auth = useAuthStore()
+const router = useRouter()
+const toast = useToast()
 const socket = useWebSocket()
 
 const userUpdateType = ref(protoService.EnvelopeType.USER_UPDATE as number)
@@ -107,9 +110,9 @@ const changeEmailOpen = ref(false)
 const changePasswordOpen = ref(false)
 const deleteAccountOpen = ref(false)
 
-const accountNotice = ref('')
+const emailError = ref('')
+const emailLoading = ref(false)
 const passwordError = ref('')
-const passwordSuccess = ref('')
 const passwordLoading = ref(false)
 const deleteAccountError = ref('')
 const deleteAccountLoading = ref(false)
@@ -139,6 +142,20 @@ const currentAvatarSeed = computed(() =>
 
 const currentEmail = computed(() =>
   (auth.user?.email ?? '').trim()
+)
+
+const currentEmailLabel = computed(() =>
+  currentEmail.value || 'Bilinmiyor'
+)
+
+const pendingEmail = computed(() =>
+  (auth.user?.new_email ?? '').trim()
+)
+
+const pendingEmailNotice = computed(() =>
+  pendingEmail.value
+    ? 'Değişikliği tamamlamak için eski ve yeni e-posta adreslerine gönderilen doğrulama bağlantılarını onayla.'
+    : ''
 )
 
 const userHasChanges = computed(() => {
@@ -180,9 +197,8 @@ function resetVideoFeedback() {
 }
 
 function resetAccountFeedback() {
-  accountNotice.value = ''
+  emailError.value = ''
   passwordError.value = ''
-  passwordSuccess.value = ''
   deleteAccountError.value = ''
 }
 
@@ -442,12 +458,14 @@ function initializeModal() {
   resetAccountFeedback()
 
   passwordLoading.value = false
+  emailLoading.value = false
   deleteAccountLoading.value = false
 
   app.clearCommandError(userUpdateType.value)
   void loadVoiceDevices(true)
   void loadVideoDevices(true)
   applyInputSensitivityRuntime()
+  void auth.checkAndHandleFreshSession(router, { redirectUnauthenticated: true })
 }
 
 async function onSaveProfile() {
@@ -486,10 +504,12 @@ function openChangeUsername() {
 }
 
 function openChangeEmail() {
+  emailError.value = ''
   changeEmailOpen.value = true
 }
 
 function openChangePassword() {
+  passwordError.value = ''
   changePasswordOpen.value = true
 }
 
@@ -504,15 +524,30 @@ async function onSubmitChangedUsername(nextUsername: string) {
   await socket.updateUserSettings({ username: nextUsername })
 }
 
-function onSubmitChangedEmail(nextEmail: string) {
-  changeEmailOpen.value = false
-  accountNotice.value = 'E-posta güncelleme henüz aktif değil'
-  devWarn('[settings] change email is not wired yet', { nextEmail })
+async function onSubmitChangedEmail(nextEmail: string) {
+  emailError.value = ''
+  emailLoading.value = true
+
+  try {
+    const response = await updateCurrentEmail({
+      email: nextEmail,
+    })
+    auth.setUser(response.user)
+    if (response.user.new_email) {
+      await auth.checkAndHandleFreshSession(router, { redirectUnauthenticated: true })
+    }
+    changeEmailOpen.value = false
+    toast.show('Doğrulama e-postaları gönderildi.', 'success')
+  } catch (error: unknown) {
+    devError('[settings] email update failed')
+    emailError.value = error instanceof Error ? error.message : 'E-posta güncelleme isteği tamamlanamadı'
+  } finally {
+    emailLoading.value = false
+  }
 }
 
 async function onSubmitChangedPassword(payload: { password: string; confirmPassword: string }) {
   passwordError.value = ''
-  passwordSuccess.value = ''
 
   if (payload.password !== payload.confirmPassword) {
     passwordError.value = 'Şifreler eşleşmiyor'
@@ -528,9 +563,8 @@ async function onSubmitChangedPassword(payload: { password: string; confirmPassw
   passwordLoading.value = true
   try {
     await updateCurrentPassword({ password: payload.password })
-    passwordSuccess.value = 'Şifre başarıyla güncellendi'
     changePasswordOpen.value = false
-    accountNotice.value = 'Şifre güncellendi'
+    toast.show('Şifre başarıyla güncellendi.', 'success')
   } catch (error: unknown) {
     devError('[settings] password update failed', error)
     passwordError.value = error instanceof Error ? error.message : 'Şifre güncellenemedi'
@@ -653,6 +687,7 @@ onBeforeUnmount(() => {
   <Modal
     :model-value="props.modelValue"
     title="Kullanıcı Ayarları"
+    :dismissible="!emailLoading"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="settings-tabs">
@@ -879,8 +914,19 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div v-if="currentEmail" class="meta">Mevcut e-posta: {{ currentEmail }}</div>
-        <div v-if="accountNotice" class="meta">{{ accountNotice }}</div>
+        <div class="account-email-card">
+          <div class="account-email-row">
+            <span class="account-email-label">Mevcut e-posta</span>
+            <span class="account-email-value">{{ currentEmailLabel }}</span>
+          </div>
+          <div v-if="pendingEmail" class="account-email-row">
+            <span class="account-email-label">Bekleyen e-posta</span>
+            <span class="account-email-value">{{ pendingEmail }}</span>
+          </div>
+          <p v-if="pendingEmailNotice" class="account-email-notice" role="status">
+            {{ pendingEmailNotice }}
+          </p>
+        </div>
       </template>
     </div>
   </Modal>
@@ -894,6 +940,8 @@ onBeforeUnmount(() => {
   <ChangeEmailModal
     v-model="changeEmailOpen"
     :initial-email="currentEmail"
+    :loading="emailLoading"
+    :error="emailError"
     @submit="onSubmitChangedEmail"
   />
 
@@ -901,7 +949,6 @@ onBeforeUnmount(() => {
     v-model="changePasswordOpen"
     :loading="passwordLoading"
     :error="passwordError"
-    :success="passwordSuccess"
     @submit="onSubmitChangedPassword"
   />
 
@@ -1223,6 +1270,44 @@ onBeforeUnmount(() => {
   color: #fda4af;
   border-color: rgba(244, 63, 94, 0.28);
   background: rgba(244, 63, 94, 0.08);
+}
+
+.account-email-card {
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.account-email-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: 12px;
+  align-items: baseline;
+}
+
+.account-email-label {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.account-email-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #d1d9e8;
+  font-size: 12px;
+  text-align: right;
+}
+
+.account-email-notice {
+  margin: 2px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid rgba(34, 211, 238, 0.14);
+  color: #a5c9d5;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .meta {

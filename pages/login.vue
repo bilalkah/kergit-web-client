@@ -9,13 +9,21 @@ import { useAuthStore } from '~/stores/auth'
 import { SocketState, useWebSocket } from '~/composables/useWebSocket'
 import { exchangeCallbackSession, loginWithPassword } from '@/src/services/auth/http'
 import {
+  EMAIL_CHANGE_RELOGIN_MESSAGE,
+  isEmailChangeSuccessQuery,
+} from '@/src/services/auth/freshSession'
+import {
   AUTH_REDIRECT_FLOW_PARAM,
   AUTH_REDIRECT_STATE_PARAM,
-  clearPendingAuthRedirectState,
   consumePendingAuthRedirectState,
   issueAuthRedirectUrl,
+  clearPendingAuthRedirectState,
 } from '@/src/utils/authRedirectState'
-import { clearAuthCallbackUrl, getSingleQueryParam } from '@/src/utils/authCallback'
+import {
+  clearAuthCallbackUrl,
+  getSingleQueryParam,
+  isEmailChangeAuthCallbackUrl,
+} from '@/src/utils/authCallback'
 import { toAuthErrorMessage } from '@/src/utils/authErrors'
 import { devError, devLog, devWarn } from '@/src/utils/safeLogger'
 
@@ -34,6 +42,8 @@ const forgotSuccess = ref(false)
 const auth = useAuthStore()
 const socket = useWebSocket()
 const route = useRoute()
+const router = useRouter()
+const emailChangeNotice = ref<string | null>(null)
 
 const VERIFICATION_TOKEN_TYPES = new Set(['signup', 'email'])
 
@@ -219,9 +229,25 @@ function clearCapsLockState() {
 onMounted(async () => {
   if (typeof window === 'undefined') return
 
+  if (isEmailChangeSuccessQuery(route.query.email_change)) {
+    emailChangeNotice.value = EMAIL_CHANGE_RELOGIN_MESSAGE
+    const nextQuery = { ...route.query }
+    delete nextQuery.email_change
+    await router.replace({ path: route.path, query: nextQuery })
+  }
+
   if (route.query.forgot === 'true') {
     showForgotPassword.value = true
     clearAuthCallbackUrl()
+  }
+
+  const callbackUrl = new URL(window.location.href)
+  if (isEmailChangeAuthCallbackUrl(callbackUrl)) {
+    devLog('[login] forwarding email-change callback to dedicated route')
+    window.location.replace(
+      `/auth/callback?${AUTH_REDIRECT_FLOW_PARAM}=email-change${window.location.hash}`
+    )
+    return
   }
 
   const hash = window.location.hash
@@ -240,7 +266,6 @@ onMounted(async () => {
   }
 
   const tokenType = params.get('type')
-
   if (tokenType && VERIFICATION_TOKEN_TYPES.has(tokenType)) {
     devLog('[login] detected email verification token in URL')
 
@@ -356,6 +381,10 @@ onMounted(async () => {
         <p class="auth-view__description">
           Kimlik doğrulaman tamamlandığında uygulamaya doğrudan yönlendirilirsin.
         </p>
+
+        <AuthAlert v-if="emailChangeNotice" tone="success">
+          {{ emailChangeNotice }}
+        </AuthAlert>
 
         <form novalidate class="auth-form" @submit.prevent="onSubmit">
           <AuthField

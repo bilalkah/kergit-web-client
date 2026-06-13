@@ -1,10 +1,12 @@
 import { AuthBootPhase, useAuthStore } from '~/stores/auth'
-import { restoreServerSession } from '@/src/services/auth/http'
+import { bootstrapServerSession } from '@/src/services/auth/http'
 import { devError, devLog } from '@/src/utils/safeLogger'
 import type { Pinia } from 'pinia'
+import type { Router } from 'vue-router'
 
 export default defineNuxtPlugin((nuxtApp) => {
   const auth = useAuthStore(nuxtApp.$pinia as Pinia)
+  const router = nuxtApp.$router as Router
   let pendingBootPhase: AuthBootPhase | null = null
   let bootPhaseHooked = false
 
@@ -31,9 +33,17 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   const initializeAuth = async () => {
     try {
-      const restoredSession = await restoreServerSession()
+      const result = await bootstrapServerSession()
 
-      if (!restoredSession) {
+      if (result.status === 'stale_session') {
+        auth.clearAuth()
+        await router.replace('/login?email_change=success')
+        auth.setReady(true)
+        setBootPhase(AuthBootPhase.Done)
+        return
+      }
+
+      if (result.status === 'unauthenticated') {
         auth.clearAuth()
         auth.setReady(true)
         setBootPhase(AuthBootPhase.Done)
@@ -41,7 +51,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       }
 
       setBootPhase(AuthBootPhase.Resuming)
-      auth.setSession(restoredSession)
+      auth.setSession(result.session)
       auth.setReady(true)
       devLog('[auth-init] session restored')
       setBootPhase(AuthBootPhase.Done)

@@ -17,6 +17,7 @@ export default defineNuxtConfig({
   ],
 
   runtimeConfig: {
+    appOrigin: process.env.WEB_DOMAIN ?? '',
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     supabaseAttachmentsBucket: process.env.SUPABASE_ATTACHMENTS_BUCKET ?? 'chat-attachments',
     supabaseAttachmentSignTtlSec: Number(process.env.SUPABASE_ATTACHMENT_SIGN_TTL_SEC ?? '900'),
@@ -37,6 +38,12 @@ export default defineNuxtConfig({
   },
 
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
+
+  routeRules: {
+    '/app': { ssr: false },
+    '/app/**': { ssr: false },
+    '/channels/**': { ssr: false },
+  },
 
   app: {
     head: {

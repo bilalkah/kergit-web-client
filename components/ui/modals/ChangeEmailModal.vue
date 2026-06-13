@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import Modal from '../Modal.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
   initialEmail?: string
+  loading?: boolean
+  error?: string
 }>(), {
   initialEmail: '',
+  loading: false,
+  error: '',
 })
 
 const emit = defineEmits<{
@@ -31,6 +36,10 @@ function onSubmit() {
     localError.value = 'Geçerli bir e-posta gir'
     return
   }
+  if (trimmed.toLowerCase() === props.initialEmail.trim().toLowerCase()) {
+    localError.value = 'Yeni e-posta mevcut e-posta adresinden farklı olmalı'
+    return
+  }
   emit('submit', trimmed)
 }
 
@@ -50,19 +59,30 @@ watch(
     :model-value="props.modelValue"
     title="E-posta Değiştir"
     :show-back="true"
+    :dismissible="!props.loading"
     @update:model-value="emit('update:modelValue', $event)"
-    @back="emit('update:modelValue', false)"
+    @back="!props.loading && emit('update:modelValue', false)"
   >
     <div class="field">
       <label class="label" for="change-email">YENİ E-POSTA</label>
-      <input id="change-email" v-model="email" class="input" type="email" autocomplete="email" />
+      <input
+        id="change-email"
+        v-model="email"
+        class="input"
+        type="email"
+        autocomplete="email"
+        :disabled="props.loading"
+      />
     </div>
 
     <div v-if="localError" class="error">{{ localError }}</div>
+    <div v-if="props.error" class="error">{{ props.error }}</div>
 
     <div class="actions">
-      <button class="btn ghost" type="button" @click="emit('update:modelValue', false)">İptal</button>
-      <button class="btn primary" type="button" @click="onSubmit">Kaydet</button>
+      <button class="btn ghost" type="button" :disabled="props.loading" @click="emit('update:modelValue', false)">İptal</button>
+      <button class="btn primary" type="button" :disabled="props.loading" @click="onSubmit">
+        {{ props.loading ? 'Güncelleniyor...' : 'Kaydet' }}
+      </button>
     </div>
   </Modal>
 </template>
@@ -109,6 +129,12 @@ watch(
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.btn:disabled,
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn.ghost {

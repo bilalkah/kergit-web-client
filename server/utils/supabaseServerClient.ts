@@ -9,6 +9,7 @@ const serverSupabaseOptions = {
     persistSession: false,
     autoRefreshToken: false,
     detectSessionInUrl: false,
+    flowType: 'implicit' as const,
   },
   realtime: {
     // Supabase constructs RealtimeClient eagerly; Node 20 needs an explicit transport.

@@ -8,8 +8,13 @@ import {
   setResponseHeader,
   type H3Event,
 } from 'h3'
-import { mapSupabaseSession } from '@/src/services/auth/supabaseAdapter'
-import type { AuthSession } from '@/stores/auth'
+import { mapSupabaseSession, mapSupabaseUser } from '@/src/services/auth/supabaseAdapter'
+import type { FreshSessionResult } from '@/src/services/auth/freshSession'
+import type { AuthSession, AuthUser } from '@/stores/auth'
+import {
+  FreshSessionAuthenticationRequiredError,
+  resolveFreshSession,
+} from './freshSession'
 import { createServerSupabaseClient } from './supabaseServerClient'
 
 const ACCESS_TOKEN_COOKIE = 'kergit_at'
@@ -87,6 +92,56 @@ function toAuthSessionOrThrow(session: Session | null): AuthSession {
   }
 
   return authSession
+}
+
+function throwAuthenticationRequired(): never {
+  throw createError({
+    statusCode: 401,
+    statusMessage: 'Authentication required',
+  })
+}
+
+export async function getFreshSupabaseSession(
+  event: H3Event
+): Promise<FreshSessionResult> {
+  markAuthResponseNoStore(event)
+
+  const refreshToken = getCookie(event, REFRESH_TOKEN_COOKIE)
+  const accessToken = getCookie(event, ACCESS_TOKEN_COOKIE)
+  const supabase = accessToken ? createServerSupabaseAuthClient() : null
+
+  try {
+    return await resolveFreshSession({
+      accessToken,
+      refreshToken,
+      clearCookies: () => clearAuthSessionCookies(event),
+      getLocalEmail: async (token) => {
+        const response = await supabase!.auth.getClaims(token)
+        if (response.error || !response.data) {
+          throw response.error ?? new Error('Unable to inspect local session claims')
+        }
+        return typeof response.data.claims.email === 'string'
+          ? response.data.claims.email
+          : undefined
+      },
+      getFreshEmail: async (token) => {
+        const response = await supabase!.auth.getUser(token)
+        if (response.error || !response.data.user) {
+          throw response.error ?? new Error('Unable to read authoritative auth user')
+        }
+        return response.data.user.email
+      },
+      restoreSession: async () => {
+        const session = await restoreSupabaseSessionFromCookies(event)
+        return session ? toAuthSessionOrThrow(session) : null
+      },
+    })
+  } catch (error: unknown) {
+    if (error instanceof FreshSessionAuthenticationRequiredError) {
+      return throwAuthenticationRequired()
+    }
+    throw error
+  }
 }
 
 export async function restoreSupabaseSessionFromCookies(event: H3Event): Promise<Session | null> {
@@ -276,4 +331,67 @@ export async function updateSupabasePassword(
   if (refreshedSession.data.session) {
     writeAuthSessionCookies(event, refreshedSession.data.session)
   }
+}
+
+export async function updateSupabaseEmail(
+  event: H3Event,
+  email: string,
+  emailRedirectTo: string
+): Promise<AuthUser> {
+  markAuthResponseNoStore(event)
+
+  const normalizedEmail = email.trim()
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid email address',
+    })
+  }
+
+  const session = await requireSupabaseSessionFromCookies(event)
+  const currentEmail = session.user.email?.trim()
+  if (currentEmail && currentEmail.toLowerCase() === normalizedEmail.toLowerCase()) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'New email must be different from current email',
+    })
+  }
+
+  const supabase = createServerSupabaseAuthClient()
+  const { error: sessionError } = await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  })
+
+  if (sessionError) {
+    clearAuthSessionCookies(event)
+    throw createError({
+      statusCode: 401,
+      statusMessage: sessionError.message,
+    })
+  }
+
+  const { data, error } = await supabase.auth.updateUser({
+    email: normalizedEmail,
+  }, {
+    emailRedirectTo,
+  })
+
+  if (error) {
+    throw createError({
+      statusCode: error.status ?? 400,
+      statusMessage: error.message,
+    })
+  }
+
+  if (!data.user) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Supabase returned an invalid user payload',
+    })
+  }
+
+  // updateUser starts the secure email-change request. Supabase returns pending
+  // user fields here, not a refreshed session or completed email replacement.
+  return mapSupabaseUser(data.user)
 }

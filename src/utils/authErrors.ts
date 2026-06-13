@@ -3,7 +3,9 @@ type AuthErrorContext =
   | 'signup'
   | 'forgot-password'
   | 'verify-email'
+  | 'email-change-callback'
   | 'password-update'
+  | 'email-update'
   | 'generic'
 
 type UnknownRecord = Record<string, unknown>
@@ -98,6 +100,10 @@ function parseAuthError(error: unknown) {
     message,
     normalizedMessage,
   }
+}
+
+export function getAuthErrorStatus(error: unknown): number | null {
+  return parseAuthError(error).status
 }
 
 function isNetworkLikeError(normalizedMessage: string): boolean {
@@ -243,6 +249,34 @@ function mapVerifyEmailMessage(status: number | null, normalizedMessage: string)
   return null
 }
 
+function mapEmailChangeCallbackMessage(
+  status: number | null,
+  normalizedMessage: string
+): string | null {
+  if (containsAny(normalizedMessage, [
+    'invalid email change auth callback',
+    'invalid token',
+    'token has expired',
+    'expired',
+    'otp_expired',
+    'refresh token',
+    'invalid grant',
+    'session not found',
+  ])) {
+    return 'E-posta değişikliği doğrulama bağlantısı geçersiz, süresi dolmuş veya daha önce kullanılmış.'
+  }
+
+  if (isNetworkLikeError(normalizedMessage)) {
+    return 'E-posta değişikliği doğrulanırken sunucuya ulaşılamadı. Lütfen tekrar dene.'
+  }
+
+  if (status !== null && status >= 500) {
+    return 'E-posta değişikliği doğrulanırken sunucu hatası oluştu. Lütfen tekrar dene.'
+  }
+
+  return null
+}
+
 function mapPasswordUpdateMessage(status: number | null, normalizedMessage: string): string | null {
   if (containsAny(normalizedMessage, ['new password should be different', 'same as the old password'])) {
     return 'Yeni şifren eski şifrenle aynı olamaz.'
@@ -263,6 +297,42 @@ function mapPasswordUpdateMessage(status: number | null, normalizedMessage: stri
   return null
 }
 
+function mapEmailUpdateMessage(
+  status: number | null,
+  code: string | null,
+  normalizedMessage: string
+): string | null {
+  if (containsAny(normalizedMessage, ['new email must be different', 'same email'])) {
+    return 'Yeni e-posta mevcut e-posta adresinden farklı olmalı.'
+  }
+
+  if (containsAny(normalizedMessage, ['invalid email', 'email address is invalid'])) {
+    return 'Geçerli bir e-posta adresi gir.'
+  }
+
+  if (containsAny(normalizedMessage, ['already registered', 'already exists', 'email exists'])) {
+    return 'Bu e-posta adresi başka bir hesap tarafından kullanılıyor.'
+  }
+
+  if (status === 401 || containsAny(normalizedMessage, ['authentication required', 'unauthorized'])) {
+    return 'E-posta adresini güncellemek için tekrar giriş yapman gerekiyor.'
+  }
+
+  if (isRateLimited(status, code, normalizedMessage)) {
+    return 'Çok fazla e-posta değiştirme denemesi yaptın. Lütfen birkaç dakika sonra tekrar dene.'
+  }
+
+  if (isNetworkLikeError(normalizedMessage)) {
+    return 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.'
+  }
+
+  if (status !== null && status >= 500) {
+    return 'E-posta güncellenirken sunucu hatası oluştu. Lütfen tekrar dene.'
+  }
+
+  return null
+}
+
 export function toAuthErrorMessage(error: unknown, context: AuthErrorContext): string {
   const { status, code, message, normalizedMessage } = parseAuthError(error)
   const mapped = (
@@ -274,8 +344,12 @@ export function toAuthErrorMessage(error: unknown, context: AuthErrorContext): s
       ? mapForgotPasswordMessage(status, code, normalizedMessage)
       : context === 'verify-email'
       ? mapVerifyEmailMessage(status, normalizedMessage)
+      : context === 'email-change-callback'
+      ? mapEmailChangeCallbackMessage(status, normalizedMessage)
       : context === 'password-update'
       ? mapPasswordUpdateMessage(status, normalizedMessage)
+      : context === 'email-update'
+      ? mapEmailUpdateMessage(status, code, normalizedMessage)
       : null
   )
 
@@ -289,6 +363,8 @@ export function toAuthErrorMessage(error: unknown, context: AuthErrorContext): s
   if (context === 'signup') return 'Kayıt işlemi tamamlanamadı. Bilgilerini kontrol edip tekrar dene.'
   if (context === 'forgot-password') return 'Sıfırlama e-postası gönderilemedi. Lütfen tekrar dene.'
   if (context === 'verify-email') return 'E-posta doğrulaması tamamlanamadı. Lütfen tekrar dene.'
+  if (context === 'email-change-callback') return 'E-posta değişikliği doğrulanamadı. Lütfen tekrar dene.'
   if (context === 'password-update') return 'Şifre güncellenemedi. Lütfen tekrar dene.'
+  if (context === 'email-update') return 'E-posta güncelleme isteği tamamlanamadı. Lütfen tekrar dene.'
   return 'İşlem tamamlanamadı. Lütfen tekrar dene.'
 }

@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import type { Router } from 'vue-router'
 import { computed, ref, watch } from 'vue'
-import { logoutServerSession } from '@/src/services/auth/http'
+import {
+  checkFreshSession,
+  logoutServerSession,
+  UnauthenticatedSessionError,
+} from '@/src/services/auth/http'
+import type { FreshSessionResult } from '@/src/services/auth/freshSession'
 import { devLog, devWarn } from '@/src/utils/safeLogger'
 
 export interface UserMetadata {
@@ -12,6 +17,8 @@ export interface UserMetadata {
 export interface AuthUser {
   id: string
   email?: string
+  new_email?: string
+  email_change_sent_at?: string
   user_metadata?: UserMetadata
 }
 
@@ -50,6 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Boot phase for smart animation
   const bootPhase = ref<AuthBootPhase>(AuthBootPhase.Idle)
+  let freshSessionRequest: Promise<FreshSessionResult | null> | null = null
 
   // --- derived ---
   const isAuthenticated = computed<boolean>(() =>
@@ -73,6 +81,16 @@ export const useAuthStore = defineStore('auth', () => {
   )
 
   // --- actions ---
+  function setUser(authUser: AuthUser) {
+    user.value = authUser
+    if (session.value) {
+      session.value = {
+        ...session.value,
+        user: authUser,
+      }
+    }
+  }
+
   function setAuthenticated(authUser: AuthUser | null) {
     user.value = authUser
     authenticated.value = !!authUser
@@ -103,6 +121,43 @@ export const useAuthStore = defineStore('auth', () => {
     authenticated.value = false
     user.value = null
     session.value = null
+  }
+
+  async function checkAndHandleFreshSession(
+    router: Router,
+    options: { redirectUnauthenticated?: boolean } = {},
+  ): Promise<FreshSessionResult | null> {
+    if (freshSessionRequest) return freshSessionRequest
+
+    freshSessionRequest = (async () => {
+      try {
+        const result = await checkFreshSession()
+
+        if (result.status === 'stale_session') {
+          clearAuth()
+          await router.replace('/login?email_change=success')
+          return result
+        }
+
+        setSession(result.session)
+        return result
+      } catch (error: unknown) {
+        if (error instanceof UnauthenticatedSessionError) {
+          clearAuth()
+          if (options.redirectUnauthenticated) {
+            await router.replace('/login')
+          }
+          return null
+        }
+
+        devWarn('[auth] fresh session check failed')
+        return null
+      } finally {
+        freshSessionRequest = null
+      }
+    })()
+
+    return freshSessionRequest
   }
 
   /**
@@ -205,10 +260,12 @@ export const useAuthStore = defineStore('auth', () => {
     userId,
 
     // actions
+    setUser,
     setSession,
     setAuthenticated,
     setReady,
     clearAuth,
+    checkAndHandleFreshSession,
     touchAuthExpiry,
     setAuthExpiryOnLogin,
     logout,
