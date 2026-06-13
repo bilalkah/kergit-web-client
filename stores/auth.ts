@@ -3,6 +3,7 @@ import type { Router } from 'vue-router'
 import { computed, ref, watch } from 'vue'
 import {
   checkFreshSession,
+  deleteCurrentAccount as deleteCurrentAccountRequest,
   logoutServerSession,
   UnauthenticatedSessionError,
 } from '@/src/services/auth/http'
@@ -201,6 +202,11 @@ export const useAuthStore = defineStore('auth', () => {
     devLog('[auth] logout complete')
   }
 
+  async function deleteCurrentAccount(emailConfirmation: string) {
+    await deleteCurrentAccountRequest({ emailConfirmation })
+    clearAuth()
+  }
+
   /**
    * Logout flow with transition: navigate first, then clear auth.
    */
@@ -269,6 +275,7 @@ export const useAuthStore = defineStore('auth', () => {
     touchAuthExpiry,
     setAuthExpiryOnLogin,
     logout,
+    deleteCurrentAccount,
     logoutWithTransition,
   }
 })

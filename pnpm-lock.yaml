@@ -38,12 +38,18 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.89.0
         version: 2.105.4
+      h3:
+        specifier: 1.15.11
+        version: 1.15.11
       livekit-client:
         specifier: ^2.17.0
         version: 2.19.0(@types/dom-mediacapture-record@1.0.22)
       nuxt:
         specifier: ^4.2.2
         version: 4.4.5(@babel/core@7.29.0)(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@parcel/watcher@2.5.6)(@types/node@20.19.42)(@vue/compiler-sfc@3.5.34)(cac@6.7.14)(db0@0.3.4)(ioredis@5.10.1)(magicast@0.5.3)(pinia@3.0.4(vue@3.5.34))(rollup-plugin-visualizer@7.0.1(rollup@4.60.4))(rollup@4.60.4)(srvx@0.11.15)(terser@5.47.1)(vite@7.3.3(@types/node@20.19.42)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0))(yaml@2.9.0)
+      ofetch:
+        specifier: ^1.5.1
+        version: 1.5.1
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(vue@3.5.34)

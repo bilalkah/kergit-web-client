@@ -1,30 +1,55 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import Modal from '../Modal.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
+  currentEmail?: string
   loading?: boolean
   error?: string
 }>(), {
+  currentEmail: '',
   loading: false,
   error: '',
 })
 
 const emit = defineEmits<{
   'update:modelValue': [boolean]
-  confirm: []
+  confirm: [string]
 }>()
 
 const confirmText = ref('')
-const localError = ref('')
+const validationRequested = ref(false)
+
+const normalizedCurrentEmail = computed(() => props.currentEmail.trim())
+const normalizedConfirmation = computed(() => confirmText.value.trim())
+const hasCurrentEmail = computed(() => normalizedCurrentEmail.value.length > 0)
+
+function looksLikeEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+const confirmationMatches = computed(() =>
+  hasCurrentEmail.value
+  && looksLikeEmail(normalizedConfirmation.value)
+  && normalizedConfirmation.value.toLowerCase() === normalizedCurrentEmail.value.toLowerCase()
+)
+
+const canSubmit = computed(() => !props.loading && confirmationMatches.value)
+
+const validationError = computed(() => {
+  if (!validationRequested.value || !hasCurrentEmail.value) return ''
+  if (!normalizedConfirmation.value) return 'Devam etmek için mevcut e-posta adresini yaz.'
+  if (!looksLikeEmail(normalizedConfirmation.value)) return 'Geçerli bir e-posta adresi yaz.'
+  if (!confirmationMatches.value) return 'E-posta adresi mevcut hesabınla eşleşmiyor.'
+  return ''
+})
 
 function onConfirm() {
-  localError.value = ''
-  if (confirmText.value.trim().toUpperCase() !== 'SIL') {
-    localError.value = 'Devam etmek için SIL yaz'
-    return
-  }
-  emit('confirm')
+  validationRequested.value = true
+  if (!canSubmit.value) return
+
+  emit('confirm', normalizedConfirmation.value)
 }
 
 watch(
@@ -32,7 +57,7 @@ watch(
   (open) => {
     if (!open) return
     confirmText.value = ''
-    localError.value = ''
+    validationRequested.value = false
   },
   { immediate: true }
 )
@@ -43,25 +68,34 @@ watch(
     :model-value="props.modelValue"
     title="Hesabı Sil"
     :show-back="true"
+    :dismissible="!props.loading"
     @update:model-value="emit('update:modelValue', $event)"
-    @back="emit('update:modelValue', false)"
+    @back="!props.loading && emit('update:modelValue', false)"
   >
     <p class="warning">
-      Bu işlem geri alınamaz. Devam etmek için aşağıya
-      <strong>SIL</strong> yaz.
+      Bu işlem geri alınamaz. Devam etmek için mevcut e-posta adresini yaz.
     </p>
 
     <div class="field">
-      <label class="label" for="delete-confirm">ONAY</label>
-      <input id="delete-confirm" v-model="confirmText" class="input" type="text" />
+      <label class="label" for="delete-confirm">E-POSTA ONAYI</label>
+      <input
+        id="delete-confirm"
+        v-model="confirmText"
+        class="input"
+        type="email"
+        autocomplete="email"
+        :disabled="props.loading"
+        @blur="validationRequested = true"
+      />
     </div>
 
-    <div v-if="localError" class="error">{{ localError }}</div>
+    <div v-if="!hasCurrentEmail" class="error">Mevcut e-posta doğrulanamadı. Lütfen tekrar giriş yap.</div>
+    <div v-if="validationError" class="error">{{ validationError }}</div>
     <div v-if="props.error" class="error">{{ props.error }}</div>
 
     <div class="actions">
-      <button class="btn ghost" type="button" @click="emit('update:modelValue', false)">İptal</button>
-      <button class="btn danger" type="button" :disabled="props.loading" @click="onConfirm">
+      <button class="btn ghost" type="button" :disabled="props.loading" @click="emit('update:modelValue', false)">İptal</button>
+      <button class="btn danger" type="button" :disabled="!canSubmit" @click="onConfirm">
         {{ props.loading ? 'İşleniyor...' : 'Hesabı Sil' }}
       </button>
     </div>
@@ -95,6 +129,11 @@ watch(
   border-radius: 10px;
   padding: 10px 12px;
   color: #eef4ff;
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .error {

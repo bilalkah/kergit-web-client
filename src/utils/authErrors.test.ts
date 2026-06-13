@@ -45,3 +45,47 @@ describe('email-change callback auth errors', () => {
     )).toBe('E-posta değişikliği doğrulanırken sunucu hatası oluştu. Lütfen tekrar dene.')
   })
 })
+
+describe('account deletion auth errors', () => {
+  it('maps unauthenticated failures', () => {
+    expect(toAuthErrorMessage(
+      { statusCode: 401, statusMessage: 'Authentication required' },
+      'account-delete',
+    )).toBe('Oturumun süresi dolmuş. Lütfen tekrar giriş yap.')
+  })
+
+  it('maps email mismatch failures', () => {
+    expect(toAuthErrorMessage(
+      { statusCode: 403, statusMessage: 'Email confirmation mismatch' },
+      'account-delete',
+    )).toBe('E-posta adresi mevcut hesabınla eşleşmiyor.')
+  })
+
+  it('maps storage cleanup conflicts', () => {
+    expect(toAuthErrorMessage(
+      { statusCode: 409, statusMessage: 'Account storage cleanup required' },
+      'account-delete',
+    )).toBe('Hesap silinemedi çünkü hesaba bağlı dosyalar temizlenemedi.')
+  })
+
+  it('maps rate-limited failures', () => {
+    expect(toAuthErrorMessage(
+      { statusCode: 429, statusMessage: 'Account deletion rate limited' },
+      'account-delete',
+    )).toBe('Hesap silinemedi. Lütfen daha sonra tekrar dene.')
+  })
+
+  it('maps server failures', () => {
+    expect(toAuthErrorMessage(
+      { statusCode: 500, statusMessage: 'Account deletion failed' },
+      'account-delete',
+    )).toBe('Hesap silinemedi. Lütfen daha sonra tekrar dene.')
+  })
+
+  it('does not expose an unexpected raw server message', () => {
+    expect(toAuthErrorMessage(
+      { statusCode: 400, statusMessage: 'Internal secret details' },
+      'account-delete',
+    )).toBe('Hesap silinemedi. Lütfen tekrar dene.')
+  })
+})

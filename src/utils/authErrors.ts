@@ -6,6 +6,7 @@ type AuthErrorContext =
   | 'email-change-callback'
   | 'password-update'
   | 'email-update'
+  | 'account-delete'
   | 'generic'
 
 type UnknownRecord = Record<string, unknown>
@@ -333,6 +334,55 @@ function mapEmailUpdateMessage(
   return null
 }
 
+function mapAccountDeleteMessage(
+  status: number | null,
+  code: string | null,
+  normalizedMessage: string
+): string | null {
+  if (status === 401 || containsAny(normalizedMessage, ['authentication required', 'unauthorized'])) {
+    return 'Oturumun süresi dolmuş. Lütfen tekrar giriş yap.'
+  }
+
+  if (containsAny(normalizedMessage, ['session email is unavailable'])) {
+    return 'Mevcut e-posta doğrulanamadı. Lütfen tekrar giriş yap.'
+  }
+
+  if (containsAny(normalizedMessage, ['invalid email confirmation'])) {
+    return 'Geçerli bir e-posta adresi yaz.'
+  }
+
+  if (status === 403 || containsAny(normalizedMessage, [
+    'email confirmation mismatch',
+    'email mismatch',
+    'does not match',
+  ])) {
+    return 'E-posta adresi mevcut hesabınla eşleşmiyor.'
+  }
+
+  if (containsAny(normalizedMessage, [
+    'storage cleanup',
+    'storage ownership',
+    'storage object',
+    'bucket',
+  ])) {
+    return 'Hesap silinemedi çünkü hesaba bağlı dosyalar temizlenemedi.'
+  }
+
+  if (isRateLimited(status, code, normalizedMessage)) {
+    return 'Hesap silinemedi. Lütfen daha sonra tekrar dene.'
+  }
+
+  if (status !== null && status >= 500) {
+    return 'Hesap silinemedi. Lütfen daha sonra tekrar dene.'
+  }
+
+  if (isNetworkLikeError(normalizedMessage)) {
+    return 'Hesap silinemedi. Lütfen tekrar dene.'
+  }
+
+  return null
+}
+
 export function toAuthErrorMessage(error: unknown, context: AuthErrorContext): string {
   const { status, code, message, normalizedMessage } = parseAuthError(error)
   const mapped = (
@@ -350,10 +400,16 @@ export function toAuthErrorMessage(error: unknown, context: AuthErrorContext): s
       ? mapPasswordUpdateMessage(status, normalizedMessage)
       : context === 'email-update'
       ? mapEmailUpdateMessage(status, code, normalizedMessage)
+      : context === 'account-delete'
+      ? mapAccountDeleteMessage(status, code, normalizedMessage)
       : null
   )
 
   if (mapped) return mapped
+
+  if (context === 'account-delete') {
+    return 'Hesap silinemedi. Lütfen tekrar dene.'
+  }
 
   if (message && !isOpaqueTransportMessage(message) && !isGenericTechnicalMessage(normalizedMessage)) {
     return message

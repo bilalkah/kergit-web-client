@@ -514,6 +514,7 @@ function openChangePassword() {
 }
 
 function openDeleteAccount() {
+  deleteAccountError.value = ''
   deleteAccountOpen.value = true
 }
 
@@ -573,10 +574,26 @@ async function onSubmitChangedPassword(payload: { password: string; confirmPassw
   }
 }
 
-function onConfirmDeleteAccount() {
-  deleteAccountLoading.value = false
-  deleteAccountError.value = 'Hesap silme işlemi henüz aktif değil'
-  devWarn('[settings] delete account is not wired yet')
+async function onConfirmDeleteAccount(emailConfirmation: string) {
+  deleteAccountError.value = ''
+  deleteAccountLoading.value = true
+
+  try {
+    await auth.deleteCurrentAccount(emailConfirmation)
+    socket.disconnect()
+    app.clearAll()
+    deleteAccountOpen.value = false
+    emit('update:modelValue', false)
+    await router.replace('/login')
+    toast.show('Hesabın silindi.', 'success')
+  } catch (error: unknown) {
+    devError('[settings] account delete failed')
+    deleteAccountError.value = error instanceof Error
+      ? error.message
+      : 'Hesap silinemedi. Lütfen tekrar dene.'
+  } finally {
+    deleteAccountLoading.value = false
+  }
 }
 
 function onBrowserDeviceChange() {
@@ -687,7 +704,7 @@ onBeforeUnmount(() => {
   <Modal
     :model-value="props.modelValue"
     title="Kullanıcı Ayarları"
-    :dismissible="!emailLoading"
+    :dismissible="!(emailLoading || deleteAccountLoading)"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div class="settings-tabs">
@@ -954,6 +971,7 @@ onBeforeUnmount(() => {
 
   <DeleteAccountModal
     v-model="deleteAccountOpen"
+    :current-email="currentEmail"
     :loading="deleteAccountLoading"
     :error="deleteAccountError"
     @confirm="onConfirmDeleteAccount"

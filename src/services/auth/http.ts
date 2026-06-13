@@ -26,6 +26,10 @@ type UpdateEmailPayload = {
   email: string
 }
 
+type DeleteAccountPayload = {
+  emailConfirmation: string
+}
+
 export type UpdateEmailResponse = {
   ok: true
   user: AuthUser
@@ -151,5 +155,16 @@ export async function updateCurrentEmail(payload: UpdateEmailPayload): Promise<U
     return response
   } catch (error: unknown) {
     throw new Error(toAuthErrorMessage(error, 'email-update'))
+  }
+}
+
+export async function deleteCurrentAccount(payload: DeleteAccountPayload): Promise<void> {
+  try {
+    await $fetch('/api/auth/delete-account', {
+      method: 'POST',
+      body: payload,
+    })
+  } catch (error: unknown) {
+    throw new Error(toAuthErrorMessage(error, 'account-delete'))
   }
 }
