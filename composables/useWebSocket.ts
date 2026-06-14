@@ -7,6 +7,7 @@ import { resolveBrowserProxyUrl } from '@/src/utils/resolveBrowserProxyUrl'
 import { devError, devLog, devWarn } from '@/src/utils/safeLogger'
 import { median } from '@/src/utils/math'
 import { monotonicNowMs } from '@/src/utils/time'
+import { isDuplicateInFlightVoiceJoin } from '@/src/services/webrtc/voiceTransitionPolicy'
 import { useNuxtApp, useRouter } from '#app'
 import {
     connectVoice as livekitConnectVoice,
@@ -1762,6 +1763,20 @@ export function useWebSocket() {
                 kind: requestedKind ?? 'auto',
                 hubId: requestedHubId,
                 channelId: requestedChannelId,
+            })
+            return
+        }
+        if (isDuplicateInFlightVoiceJoin(voiceTransitionController.active, {
+            hubId: requestedHubId,
+            channelId: requestedChannelId,
+        })) {
+            devWarn('[voice] duplicate_join_suppressed', {
+                transitionId: voiceTransitionController.active?.id,
+                target: {
+                    hubId: requestedHubId,
+                    channelId: requestedChannelId,
+                },
+                source: options.source ?? 'unknown',
             })
             return
         }
