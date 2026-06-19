@@ -6,6 +6,7 @@ import { useAuthStore } from './auth'
 import {
   checkFreshSession,
   deleteCurrentAccount as deleteCurrentAccountRequest,
+  logoutServerSession,
   UnauthenticatedSessionError,
 } from '@/src/services/auth/http'
 
@@ -99,5 +100,38 @@ describe('auth fresh session handling', () => {
 
     expect(auth.isAuthenticated).toBe(true)
     expect(auth.session).toEqual(oldSession)
+  })
+})
+
+describe('remember-session lifetime migration safety', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  // The remember/session deadline is now owned by the server-backed HttpOnly
+  // cookie (sliding window), so the old client-side expiry setters are no-ops.
+  // Legacy call sites must remain safe and must never mutate auth state — there
+  // is no stale fixed-from-login deadline left in the client to age out.
+  it('keeps legacy expiry setters as safe no-ops that do not alter auth state', () => {
+    const auth = useAuthStore()
+    auth.setSession(oldSession)
+
+    expect(() => auth.setAuthExpiryOnLogin()).not.toThrow()
+    expect(() => auth.touchAuthExpiry()).not.toThrow()
+
+    expect(auth.isAuthenticated).toBe(true)
+    expect(auth.session).toEqual(oldSession)
+  })
+
+  it('clears auth state on explicit logout without re-extending any deadline', async () => {
+    const auth = useAuthStore()
+    auth.setSession(oldSession)
+
+    await auth.logout()
+
+    expect(logoutServerSession).toHaveBeenCalledOnce()
+    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.session).toBeNull()
+    expect(auth.user).toBeNull()
   })
 })

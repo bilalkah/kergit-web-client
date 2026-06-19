@@ -616,7 +616,9 @@ function isScreenMediaPublicationAllowed(
     return false;
 }
 
-function shouldSubscribeToRemotePublication(
+// Exported for unit testing of the remote subscription policy. Not part of the
+// public runtime surface — production callers use the internal helpers above.
+export function shouldSubscribeToRemotePublication(
     publication: TrackPublicationLike,
     participant?: Participant,
 ): boolean {
