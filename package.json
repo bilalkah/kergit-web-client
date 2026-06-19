@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "audit:dups": "node ./scripts/dup-audit.mjs",
+    "legal:verify-hashes": "node ./scripts/verify-legal-hashes.mjs",
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",

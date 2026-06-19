@@ -13,7 +13,6 @@ vi.mock('h3', async (importOriginal) => {
     ...actual,
     readBody: vi.fn(),
     getRequestHeader: vi.fn(() => undefined),
-    getRequestIP: vi.fn(() => undefined),
   }
 })
 

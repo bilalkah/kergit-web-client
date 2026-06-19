@@ -2,7 +2,6 @@ import {
   createError,
   defineEventHandler,
   getRequestHeader,
-  getRequestIP,
   readBody,
   type H3Event,
 } from 'h3'
@@ -22,10 +21,10 @@ import { devError } from '@/src/utils/safeLogger'
 
 const KERGIT_APP_SCHEMA = 'kergit_app'
 
+// IP and user-agent are intentionally NOT collected: the audit_events schema has
+// no ip/user_agent columns and the account deletion RPCs no longer accept them.
 type AuditContext = {
   requestId?: string
-  ip?: string
-  userAgent?: string
 }
 
 // Defensive: tolerate minimal/mocked events and never throw from logging context.
@@ -34,12 +33,6 @@ function getAuditContext(event: H3Event): AuditContext {
 
   try {
     context.requestId = getRequestHeader(event, 'x-request-id') ?? undefined
-  } catch { /* ignore */ }
-  try {
-    context.userAgent = getRequestHeader(event, 'user-agent') ?? undefined
-  } catch { /* ignore */ }
-  try {
-    context.ip = getRequestIP(event, { xForwardedFor: true }) ?? undefined
   } catch { /* ignore */ }
 
   return context
@@ -108,8 +101,6 @@ export default defineEventHandler(async (event) => {
     p_user_id: userId,
     p_email_hash: emailHash,
     p_request_id: audit.requestId ?? null,
-    p_ip: audit.ip ?? null,
-    p_user_agent: audit.userAgent ?? null,
   })
 
   if (begin.error || !begin.data) {
@@ -164,8 +155,6 @@ export default defineEventHandler(async (event) => {
       p_error_code: String(authError.status ?? 'unknown'),
       p_failure_reason: 'Supabase Auth soft delete failed',
       p_request_id: audit.requestId ?? null,
-      p_ip: audit.ip ?? null,
-      p_user_agent: audit.userAgent ?? null,
     })
 
     if (failure.error) {
@@ -184,8 +173,6 @@ export default defineEventHandler(async (event) => {
     p_deletion_id: deletionId,
     p_user_id: userId,
     p_request_id: audit.requestId ?? null,
-    p_ip: audit.ip ?? null,
-    p_user_agent: audit.userAgent ?? null,
   })
 
   if (complete.error) {

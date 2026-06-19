@@ -92,9 +92,11 @@ Dış bağlantıların içeriklerinden, güvenliğinden veya gizlilik uygulamala
 
 ### 3.8 Ses, Görüntü ve Ekran Paylaşımı Verileri
 
-Mikrofon sesi, kamera görüntüsü, ekran paylaşımı içeriği, sistem sesi, sesli kanal katılım bilgisi, mute/deafen durumu, konuşuyor göstergesi, oda/kanal bilgisi ve medya bağlantısına ilişkin teknik veriler işlenebilir.
+Sesli/görüntülü iletişim ve ekran paylaşımı sırasında mikrofon sesi, kamera görüntüsü, ekran paylaşımı içeriği ve sistem sesi gibi canlı medya akışları yalnızca gerçek zamanlı iletişimin sağlanması için medya iletim altyapısı üzerinden ilgili odadaki yetkili katılımcılara iletilir.
 
-Bu veriler sesli ve görüntülü iletişim hizmetinin sağlanması için gerçek zamanlı olarak işlenir ve ilgili odadaki yetkili katılımcılara iletilir.
+Kergit, canlı sesli görüşmeleri, kamera görüntüsünü ve ekran paylaşımı akışlarını kaydetmez, saklamaz veya dinlemez. Bu canlı medya içeriği Kergit uygulama veritabanında tutulmaz ve görüşme sonrası geri getirilebilecek bir kayıt olarak saklanmaz.
+
+Kergit, medya içeriğinin kendisini değil, yalnızca sesli kanal katılım durumunu ve teknik medya olaylarını işleyebilir. Bu kapsamda sesli kanala katılma/ayrılma bilgisi, mute/deafen durumu, konuşuyor göstergesi, oda/kanal bilgisi ve medya bağlantısına ilişkin teknik veriler işlenebilir ve sınırlı süreli teknik/güvenlik kayıtlarında tutulabilir. Bu kayıtlar medya içeriğini içermez.
 
 Kergit uygulama kodu, kullanıcıya açıkça bildirilmeyen bir medya kaydı başlatmayı amaçlamaz. Ancak diğer kullanıcılar kendi cihazlarıyla ekran görüntüsü, ses kaydı veya video kaydı alabilir. Bu tür izinsiz kayıt ve paylaşım Kullanıcı Sözleşmesi kapsamında yasaktır.
 
@@ -106,9 +108,9 @@ Bu veriler Kergit deneyimini kullanıcının tercihleriyle uyumlu hale getirmek 
 
 ### 3.10 Teknik Log, Güvenlik ve Ağ Verileri
 
-Güvenlik ve denetim kayıtları kapsamında olay türü, olay kategorisi, olay önem derecesi, ilgili kullanıcı kimliği referansları, ilgili topluluk/kanal/mesaj/dosya kimlikleri, istek kimliği, oturum kimliği, bağlantı kimliği, IP adresi, tarayıcı bilgisi (user-agent), işlemi gören sunucu düğümü kimliği, hata kodu, durum kodu ve sınırlı/özet teknik metadata gibi veriler işlenebilir.
+Güvenlik ve denetim kayıtları kapsamında olay türü, olay kategorisi, olay önem derecesi, ilgili kullanıcı kimliği referansları, ilgili topluluk/kanal/mesaj/dosya/davet kimlikleri, istek kimliği, oturum kimliği, bağlantı kimliği, işlemi gören sunucu düğümü kimliği, hata kodu, durum kodu ve sınırlı/özet teknik metadata gibi veriler işlenebilir.
 
-Bu denetim kayıtları, niteliği gereği hassas içerik tutmayacak şekilde tasarlanmıştır. Bu kayıtlara e-posta adresi, parola, erişim/oturum jetonları, çerez içerikleri, isteğin tam gövdesi, mesaj içeriği, dosya içeriği veya tam başlık (header) dökümleri yazılmaz.
+Bu denetim kayıtları, niteliği gereği hassas içerik tutmayacak şekilde tasarlanmıştır. Bu kayıtlara IP adresi, tarayıcı bilgisi (user-agent), e-posta adresi, parola, erişim/oturum jetonları, çerez içerikleri, isteğin tam gövdesi, tam başlık (header) dökümleri, mesaj içeriği veya dosya içeriği yazılmaz.
 
 Bu veriler hizmetin güvenliğini sağlamak, kötüye kullanımı önlemek, hata ayıklamak, sistem performansını izlemek, saldırıları tespit etmek ve gerektiğinde hukuki süreçleri yürütebilmek için işlenir. Bu denetim kayıtları kalıcı tutulmaz; düzenli olarak çalışan bir temizleme süreci ile sınırlı bir süre (kural olarak 30 gün) sonunda silinir.
 

@@ -139,6 +139,8 @@ Kullanıcı; mikrofon, kamera ve ekran paylaşımı izinlerini kendi cihazı ve 
 
 Kullanıcı, ekran paylaşımı sırasında kişisel, gizli, özel veya üçüncü kişilere ait bilgileri paylaşmamaya dikkat etmelidir.
 
+Sesli/görüntülü iletişim ve ekran paylaşımı gerçek zamanlı iletişim için sunulur. Hizmet Sağlayıcı, canlı sesli/görüntülü görüşmeleri ve ekran paylaşımı akışlarını kaydetmeyi, arşivlemeyi, yedeklemeyi veya görüşme sonrası geri getirmeyi taahhüt etmez. Kullanıcılar, canlı sesli/görüntülü görüşmelerin veya ekran paylaşımının Kergit tarafından kaydedileceğini ya da sonradan erişilebilir olacağını beklememelidir.
+
 Kergit uygulama kodu, kullanıcıya açıkça bildirilmeyen bir medya kaydı başlatmayı amaçlamaz. Ancak diğer kullanıcıların kendi cihazlarıyla ekran görüntüsü, ses kaydı veya video kaydı alması teknik olarak tamamen engellenemeyebilir.
 
 Diğer kullanıcıların izni olmadan ses, görüntü veya ekran kaydı almak, paylaşmak veya kötüye kullanmak yasaktır.
