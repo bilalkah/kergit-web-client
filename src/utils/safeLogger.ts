@@ -91,3 +91,16 @@ export function devWarn(...args: LogArg[]) {
 export function devError(...args: LogArg[]) {
   emit(console.error, args)
 }
+
+/**
+ * Server-side error diagnostics that MUST surface in production too.
+ *
+ * Unlike devError (suppressed outside dev), this always emits via console.error
+ * so backend failure paths are not silently swallowed behind a generic UI
+ * message. Output is still sanitized: sensitive keys (token/email/etc.) are
+ * redacted and Error objects are reduced to name/message/stack. Use only for
+ * server diagnostics — never to log secrets, cookies, or request bodies.
+ */
+export function logServerError(...args: LogArg[]) {
+  console.error(...sanitizeArgs(args))
+}
