@@ -8,21 +8,9 @@ import {
 import { clearAuthSessionCookies, requireSupabaseSessionFromCookies } from '../../utils/authSession'
 import { computeAccountEmailHash, isValidEmail, normalizeEmail } from '../../utils/accountEmail'
 import { getSupabaseAdminClient } from '../../utils/supabaseAdmin'
-import { logServerError } from '@/src/utils/safeLogger'
+import { logSafeServerFailure } from '../../utils/safeServerDiagnostics'
 
-// Safe, non-sensitive shape of a Supabase/PostgREST/Auth error for diagnostics.
-// Codes like PGRST202 (no function matching signature) or 42703 (column does
-// not exist) are exactly what distinguishes a stale-deploy vs schema problem.
-// SQL/PostgREST error text here never contains email/tokens/cookies/bodies.
-function describeSupabaseError(error: unknown): {
-  code?: string
-  status?: number
-  message?: string
-} {
-  if (!error || typeof error !== 'object') return {}
-  const e = error as { code?: string; status?: number; message?: string }
-  return { code: e.code, status: e.status, message: e.message }
-}
+const ROUTE = 'auth/delete-account'
 
 // TODO(kergit_app-cutover):
 // When the runtime C++ server fully migrates to the kergit_app schema,
@@ -118,12 +106,11 @@ export default defineEventHandler(async (event) => {
   })
 
   if (begin.error || !begin.data) {
-    logServerError('[delete-account] stage failed', {
+    logSafeServerFailure(ROUTE, {
       stage: 'request_account_deletion',
       userId,
       requestId: audit.requestId,
-      supabaseError: describeSupabaseError(begin.error),
-    })
+    }, begin.error)
     throw createError({
       statusCode: 500,
       statusMessage: 'Account deletion failed',
@@ -145,7 +132,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (result.status !== 'anonymized') {
-    logServerError('[delete-account] stage failed', {
+    logSafeServerFailure(ROUTE, {
       stage: 'owned_hub_check',
       userId,
       requestId: audit.requestId,
@@ -164,13 +151,12 @@ export default defineEventHandler(async (event) => {
   if (authError) {
     const mapped = toSafeAdminDeleteError(authError)
 
-    logServerError('[delete-account] stage failed', {
+    logSafeServerFailure(ROUTE, {
       stage: 'supabase_auth_delete',
       userId,
       requestId: audit.requestId,
       deletionId,
-      supabaseError: describeSupabaseError(authError),
-    })
+    }, authError)
 
     // Record failure without leaking sensitive details.
     const failure = await db.rpc('fail_account_deletion', {
@@ -182,13 +168,12 @@ export default defineEventHandler(async (event) => {
     })
 
     if (failure.error) {
-      logServerError('[delete-account] stage failed', {
+      logSafeServerFailure(ROUTE, {
         stage: 'fail_account_deletion',
         userId,
         requestId: audit.requestId,
         deletionId,
-        supabaseError: describeSupabaseError(failure.error),
-      })
+      }, failure.error)
     }
 
     throw mapped
@@ -202,13 +187,12 @@ export default defineEventHandler(async (event) => {
   })
 
   if (complete.error) {
-    logServerError('[delete-account] stage failed', {
+    logSafeServerFailure(ROUTE, {
       stage: 'complete_account_deletion',
       userId,
       requestId: audit.requestId,
       deletionId,
-      supabaseError: describeSupabaseError(complete.error),
-    })
+    }, complete.error)
   }
 
   // Step 4: clear auth cookies/session.

@@ -222,4 +222,38 @@ describe('POST /api/auth/delete-account', () => {
     expect(deleteUser).not.toHaveBeenCalled()
     expect(clearAuthSessionCookies).not.toHaveBeenCalled()
   })
+
+  it('logs a redacted diagnostic via the shared helper (no email/token leaks, codes survive)', async () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.s3cr3tSignaturePartHere1234567890'
+    vi.mocked(readBody).mockResolvedValue({ emailConfirmation: 'user@example.com' })
+    mockAuthedSession('user@example.com')
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST202', status: 404, message: `no fn for user@example.com token ${jwt}` },
+    })
+
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 500 })
+    } finally {
+      const call = spy.mock.calls.find(c => c[0] === '[auth/delete-account] failed')
+      expect(call).toBeDefined()
+      const payload = call?.[1] as Record<string, any>
+
+      // Useful, non-sensitive context survives.
+      expect(payload.route).toBe('auth/delete-account')
+      expect(payload.stage).toBe('request_account_deletion')
+      expect(payload.userId).toBe('user-id')
+      expect(payload.requestId).toBeUndefined() // not provided in this request
+      expect(payload.error.code).toBe('PGRST202')
+      expect(payload.error.status).toBe(404)
+
+      // Secrets never reach the log.
+      const serialized = JSON.stringify(payload)
+      expect(serialized).not.toContain('user@example.com')
+      expect(serialized).not.toContain('eyJhbGci')
+
+      spy.mockRestore()
+    }
+  })
 })

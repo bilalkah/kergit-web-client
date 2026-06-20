@@ -2,10 +2,13 @@ import type { Session as SupabaseSession, User as SupabaseUser } from '@supabase
 import type { AuthSession, AuthUser } from '@/stores/auth'
 
 export function mapSupabaseUser(user: SupabaseUser): AuthUser {
+    // Only auth identity fields cross to the client. Supabase user_metadata is
+    // never exposed: profile data (username/display_name/avatar_seed) is owned
+    // by the Kergit backend profile flow (kergit_app.profiles via the app store),
+    // and metadata can also carry legal-proof hashes / internal fields.
     return {
         id: user.id,
         email: user.email ?? undefined,
-        user_metadata: user.user_metadata ?? undefined
     }
 }
 

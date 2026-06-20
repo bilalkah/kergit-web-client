@@ -100,4 +100,28 @@ describe('POST /api/auth/signup-precheck', () => {
       statusMessage: 'Signup precheck failed',
     })
   })
+
+  it('logs the reservation failure via safe diagnostics (route-tagged, secrets redacted)', async () => {
+    vi.mocked(readBody).mockResolvedValue({ email: 'user@example.com', username: 'freehandle' })
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'PGRST301', status: 500, message: 'denied for admin@example.com' },
+    })
+
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 500 })
+
+      const call = spy.mock.calls.find(c => c[0] === '[auth/signup-precheck] failed')
+      expect(call).toBeDefined()
+      const payload = call?.[1] as Record<string, any>
+      expect(payload.route).toBe('auth/signup-precheck')
+      expect(payload.stage).toBe('is_email_reserved')
+      expect(payload.error.code).toBe('PGRST301')
+      expect(payload.error.status).toBe(500)
+      expect(JSON.stringify(payload)).not.toContain('admin@example.com')
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
 })

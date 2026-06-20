@@ -5,6 +5,10 @@
   "scripts": {
     "audit:dups": "node ./scripts/dup-audit.mjs",
     "legal:verify-hashes": "node ./scripts/verify-legal-hashes.mjs",
+    "check:client-secrets": "node ./scripts/check-client-secrets.mjs",
+    "check:server-logging": "node ./scripts/check-server-logging.mjs",
+    "audit:server": "node ./scripts/check-server-logging.mjs",
+    "audit:client-bundle": "nuxt build && node ./scripts/check-client-secrets.mjs",
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
@@ -38,8 +42,10 @@
     "@nuxtjs/tailwindcss": "^6.14.0",
     "@types/node": "^20.0.0",
     "@types/ws": "^8.5.0",
+    "@typescript-eslint/typescript-estree": "^8.61.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.6",
+    "fast-glob": "^3.3.3",
     "jsdom": "^27.0.1",
     "protobufjs-cli": "2.5.2",
     "vitest": "^3.2.4"

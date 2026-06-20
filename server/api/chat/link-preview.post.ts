@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, readBody } from 'h3'
 import { requireChatMembership } from '../../utils/chatAccess'
 import { assertPublicHostname } from '../../utils/linkPreview'
+import { logSafeServerDiagnostic, logSafeServerFailure } from '../../utils/safeServerDiagnostics'
 
 type LinkPreviewRequest = {
   url?: string
@@ -79,7 +80,9 @@ function normalizeText(input: string, maxLength = 512): string {
 }
 
 function logLinkPreview(event: string, details: Record<string, unknown>) {
-  console.info('[chat/link-preview]', event, details)
+  // Details can include user-supplied URLs (which may carry ?token=/?code=);
+  // the helper redacts the whole context before emitting.
+  logSafeServerDiagnostic('[chat/link-preview]', { route: 'chat/link-preview', stage: event, ...details })
 }
 
 function parseTagAttributes(tag: string): Record<string, string> {
@@ -127,10 +130,10 @@ async function assertPublicHostnameOrThrow(hostname: string): Promise<void> {
   try {
     await assertPublicHostname(hostname)
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    logSafeServerFailure('chat/link-preview', { stage: 'assert_public_hostname' }, error)
     throw createError({
       statusCode: 400,
-      statusMessage: `Blocked URL target: ${message}`,
+      statusMessage: 'Blocked URL target',
     })
   }
 }
@@ -664,7 +667,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!result.preview && result.reason) {
-    console.warn('[chat/link-preview] preview_unavailable', {
+    logLinkPreview('preview_unavailable', {
       url: cacheKey,
       reason: result.reason,
     })

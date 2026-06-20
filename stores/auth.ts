@@ -10,14 +10,9 @@ import {
 import type { FreshSessionResult } from '@/src/services/auth/freshSession'
 import { devLog, devWarn } from '@/src/utils/safeLogger'
 
-export interface UserMetadata {
-  username?: string
-}
-
 export interface AuthUser {
   id: string
   email?: string
-  user_metadata?: UserMetadata
 }
 
 export interface AuthSession {
@@ -62,14 +57,14 @@ export const useAuthStore = defineStore('auth', () => {
     authenticated.value
   )
 
+  // Auth-only fallback handle derived from the email local-part. The real
+  // username/display_name/avatar_seed come from the Kergit backend profile flow
+  // (app store), never from Supabase auth metadata.
   const username = computed<string | null>(() =>
-    user.value?.user_metadata?.username
-    ?? user.value?.email?.split('@')[0]
+    user.value?.email?.split('@')[0]
     ?? null
   )
 
-  // Auth-only fallback label. Runtime profile display comes from the app store's
-  // user metadata (display_name/username/avatar_seed), not from auth metadata.
   const displayName = computed<string | null>(() =>
     username.value
     ?? null

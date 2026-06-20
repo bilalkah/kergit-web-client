@@ -1,9 +1,10 @@
 import { createError, defineEventHandler, readBody } from 'h3'
 import { computeAccountEmailHash, isValidEmail, normalizeEmail } from '../../utils/accountEmail'
 import { getSupabaseAdminClient } from '../../utils/supabaseAdmin'
-import { devError } from '@/src/utils/safeLogger'
+import { logSafeServerFailure } from '../../utils/safeServerDiagnostics'
 
 const KERGIT_APP_SCHEMA = 'kergit_app'
+const ROUTE = 'auth/signup-precheck'
 
 // Signup precheck:
 // - blocks reuse of an email that belongs to a deleted account (HMAC digest only;
@@ -41,7 +42,7 @@ export default defineEventHandler(async (event) => {
       // cannot read kergit_app.profiles in this environment), do not block signup.
       // The unique index on user_name plus the signup error mapping still surface
       // a taken username to the user.
-      devError('[signup-precheck] username availability check unavailable', { error })
+      logSafeServerFailure(ROUTE, { stage: 'username_availability' }, error)
     } else if (Array.isArray(data) && data.length > 0) {
       throw createError({
         statusCode: 409,
@@ -58,7 +59,7 @@ export default defineEventHandler(async (event) => {
     .rpc('is_email_reserved', { p_email_hash: emailHash })
 
   if (error) {
-    devError('[signup-precheck] is_email_reserved failed', { error })
+    logSafeServerFailure(ROUTE, { stage: 'is_email_reserved' }, error)
     throw createError({
       statusCode: 500,
       statusMessage: 'Signup precheck failed',

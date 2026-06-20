@@ -13,6 +13,12 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: devtoolsEnabled },
 
+  // Never ship client source maps to browsers in production (avoids exposing
+  // original source/comments about internals). Server maps stay server-only.
+  sourcemap: {
+    client: false,
+  },
+
   srcDir: '.',
   pages: true,
 

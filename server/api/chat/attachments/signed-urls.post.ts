@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, readBody } from 'h3'
 import { requireChatMembership } from '../../../utils/chatAccess'
 import { getSupabaseAdminClient } from '../../../utils/supabaseAdmin'
+import { logSafeServerFailure } from '../../../utils/safeServerDiagnostics'
 
 type SignedUrlRequest = {
   channelId?: string
@@ -45,9 +46,10 @@ export default defineEventHandler(async (event) => {
   const admin = getSupabaseAdminClient()
   const signedRes = await admin.storage.from(bucket).createSignedUrls(storageKeys, expiresIn)
   if (signedRes.error) {
+    logSafeServerFailure('chat/attachments/signed-urls', { stage: 'create_signed_urls', bucket }, signedRes.error)
     throw createError({
       statusCode: 500,
-      statusMessage: signedRes.error.message,
+      statusMessage: 'Attachment signed URL generation failed',
     })
   }
 

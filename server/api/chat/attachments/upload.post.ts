@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, readMultipartFormData } from 'h3'
 import { requireChatMembership } from '../../../utils/chatAccess'
 import { getSupabaseAdminClient } from '../../../utils/supabaseAdmin'
+import { logSafeServerFailure } from '../../../utils/safeServerDiagnostics'
 
 enum MessageAttachmentKind {
   Unspecified = 0,
@@ -112,9 +113,10 @@ export default defineEventHandler(async (event) => {
       })
 
     if (uploadRes.error) {
+      logSafeServerFailure('chat/attachments/upload', { stage: 'storage_upload', bucket }, uploadRes.error)
       throw createError({
         statusCode: 500,
-        statusMessage: uploadRes.error.message,
+        statusMessage: 'Attachment upload failed',
       })
     }
 
