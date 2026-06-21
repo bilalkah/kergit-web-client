@@ -165,11 +165,13 @@ onMounted(async () => {
 })
 
 const showDisconnect = computed(() => {
-  if (auth.loggingOut) return false  // Don't show during logout
+  if (auth.loggingOut) return false
   const code = socket.lastClose.value?.code
-  const reason = socket.lastClose.value?.reason
-  // Show disconnect screen for auth errors (4400+) or when server sent a reason
-  return (typeof code === 'number' && code >= 4400) || (reason && reason.trim().length > 0)
+  if (typeof code !== 'number') return false
+  // Show disconnect screen only for real auth rejections (4400+).
+  // Exclude 4408 (bootstrap_timeout): that is a transient client-side timeout handled by reconnect.
+  // Code 1006 closes (idle timeout, TCP reset) are also transient and should reconnect silently.
+  return code >= 4400 && code !== 4408
 })
 const disconnectTitle = computed(() => {
   const reason = socket.lastClose.value?.reason

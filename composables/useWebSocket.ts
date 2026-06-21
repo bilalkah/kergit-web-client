@@ -1226,9 +1226,8 @@ export function useWebSocket() {
                 authState: authState.value
             })
             resolver.reject(new Error('Auth response timeout'))
-            reconnect.enabled = false
             clearReconnectState()
-            state.value = SocketState.ERROR
+            state.value = SocketState.IDLE
             authState.value = SocketAuthState.UNAUTHENTICATED
             lastClose.value = { code: 4408, reason: 'bootstrap_timeout' }
             if (socket.value) {
@@ -1354,11 +1353,15 @@ export function useWebSocket() {
                         clearAuthOkTimeout()
                         clearReconnectState()
 
-                        // Determine if this is an auth-related close (4400+) or has a reason from server
+                        // Determine if this is an auth-related close (4400+).
+                        // 4408 is bootstrap_timeout (client-initiated transient failure) — treat as recoverable.
                         const authish = evt.code >= 4400
-                        const hasServerReason = evt.reason && evt.reason.trim().length > 0
+                        const isBootstrapTimeout = evt.code === 4408
+                        const isRecoverable = !authish || isBootstrapTimeout
 
-                        state.value = authish ? SocketState.ERROR : opened ? SocketState.IDLE : SocketState.ERROR
+                        state.value = isRecoverable
+                            ? (opened ? SocketState.IDLE : SocketState.ERROR)
+                            : SocketState.ERROR
                         authState.value = SocketAuthState.UNAUTHENTICATED
                         clearAllPendingInitialActiveChannels()
                         lastClose.value = { code: evt.code, reason: evt.reason }
@@ -1373,16 +1376,14 @@ export function useWebSocket() {
                             reject(new Error(`Socket closed before ready (code ${evt.code})`))
                         }
 
-                        // Only reconnect if:
-                        // 1. Not an auth error (code < 4400)
-                        // 2. No reason provided by server (unexpected disconnect)
-                        // 3. reconnect.enabled is true (not a user-initiated disconnect)
-                        if (!authish && !hasServerReason) {
+                        // Reconnect for all transient disconnects:
+                        // - code < 4400: always reconnect (including 1006 with server reason)
+                        // - code 4408 (bootstrap_timeout): reconnect — transient, not an auth rejection
+                        // - other 4400+ codes: do not reconnect — server/client rejected auth
+                        if (isRecoverable) {
                             scheduleReconnect(`close_${evt.code}`)
-                        } else if (hasServerReason) {
-                            // Server sent a reason - don't reconnect, set error state
-                            devWarn('[socket] server closed with reason:', evt.reason)
-                            state.value = SocketState.ERROR
+                        } else {
+                            devWarn('[socket] auth error close, no reconnect:', evt.code, evt.reason)
                         }
                     }
 
