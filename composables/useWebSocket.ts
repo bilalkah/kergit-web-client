@@ -68,6 +68,15 @@ const reauth = {
     scheduledAtMs: null as number | null
 }
 
+// Refresh the JWT this far before it expires. 5 min (not seconds) so the one-shot
+// timer still fires in time even when a backgrounded tab throttles timers to ~1/min.
+const REAUTH_LEAD_MS = 5 * 60 * 1000
+
+// Attached once: refresh the JWT / re-verify the socket when the tab returns to the
+// foreground or the network comes back (the reauth setTimeout does not fire while the
+// tab is frozen/backgrounded or the machine sleeps).
+let resumeListenersAttached = false
+
 const reconnect = {
     attempts: 0,
     timeoutId: null as number | null,
@@ -1082,7 +1091,7 @@ export function useWebSocket() {
     function scheduleReauth(session: AuthSession, force = false) {
         if (typeof window === 'undefined') return
 
-        const targetAtMs = session.expires_at * 1000 - 30_000
+        const targetAtMs = session.expires_at * 1000 - REAUTH_LEAD_MS
 
         if (!force && reauth.scheduledAtMs !== null && targetAtMs >= reauth.scheduledAtMs) {
             return
@@ -1096,6 +1105,59 @@ export function useWebSocket() {
             clearReauthTimer()
             void refreshAndReauth()
         }, waitMs)
+    }
+
+    // Refresh the JWT and re-verify the socket when the tab/app returns to the
+    // foreground or the network comes back. The proactive reauth is a single long
+    // setTimeout (~1h out); it does NOT fire while the tab is frozen/backgrounded or
+    // the machine sleeps, so the access token silently expires and the server closes
+    // 4402. Refreshing on resume renews the token the moment the user returns — ideally
+    // before the server's heartbeat closes the connection — and reconnects if it has
+    // already dropped (connect() -> resolveToken() refreshes the JWT in the handshake).
+    async function handleResume(trigger: string) {
+        if (typeof window === 'undefined') return
+        // Only relevant for a logged-in user.
+        if (!auth.isAuthenticated && !auth.session) return
+
+        const sock = socket.value
+        const readyState = sock ? sock.readyState : WebSocket.CLOSED
+
+        // A socket is still alive — never spawn a second one (that would orphan this
+        // connection on the server). Mid-handshake: leave it to the connect flow.
+        if (readyState === WebSocket.CONNECTING) return
+        if (readyState === WebSocket.OPEN) {
+            if (authState.value === SocketAuthState.AUTHENTICATED) {
+                const expiresAtMs = auth.session?.expires_at ? auth.session.expires_at * 1000 : null
+                // Refresh if the access token has expired or is within the reauth lead window.
+                const nearExpiry = !expiresAtMs || expiresAtMs <= Date.now() + REAUTH_LEAD_MS
+                if (nearExpiry) {
+                    devWarn('[socket] resume: refreshing JWT', { trigger })
+                    await refreshAndReauth()
+                }
+                // Nudge liveness so a half-open socket (e.g. after sleep) is detected fast.
+                void sendPing().catch(() => {})
+            }
+            return
+        }
+
+        // No live socket (closed/closing) — reconnect now.
+        if (state.value !== SocketState.CONNECTING) {
+            devWarn('[socket] resume: reconnecting', { trigger, state: state.value })
+            reconnect.enabled = true
+            void connect({ timeoutMs: 8000, isReconnect: true }).catch((err) => {
+                devWarn('[socket] resume reconnect failed', err)
+                scheduleReconnect('resume')
+            })
+        }
+    }
+
+    function setupResumeListeners() {
+        if (resumeListenersAttached || typeof window === 'undefined') return
+        resumeListenersAttached = true
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') void handleResume('visibilitychange')
+        })
+        window.addEventListener('online', () => void handleResume('online'))
     }
 
     async function sendPing() {
@@ -1282,6 +1344,7 @@ export function useWebSocket() {
     function connect(options: ConnectOptions = {}): Promise<void> {
         const timeoutMs = options.timeoutMs ?? 8000
         bootstrapTimeoutMs = timeoutMs
+        setupResumeListeners()
         if (!options.isReconnect) {
             reconnect.enabled = true
             resetReconnectAttempts()
@@ -1295,6 +1358,21 @@ export function useWebSocket() {
         // If connection/auth is in progress, return the existing promise
         if (connectionPromise) {
             return connectionPromise
+        }
+
+        // Defensive: we are about to create a new socket and we are neither READY nor
+        // mid-connect, so any socket still referenced here is stale. Detach its handlers
+        // and close it so we never leave an orphaned connection open on the server.
+        if (socket.value) {
+            const stale = socket.value
+            socket.value = null
+            try {
+                stale.onopen = null
+                stale.onmessage = null
+                stale.onerror = null
+                stale.onclose = null
+                stale.close(1000, 'superseded')
+            } catch { /* ignore */ }
         }
 
         const wsUrl = resolveBrowserProxyUrl('/ws', 'socket')
