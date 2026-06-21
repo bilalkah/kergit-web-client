@@ -1354,10 +1354,15 @@ export function useWebSocket() {
                         clearReconnectState()
 
                         // Determine if this is an auth-related close (4400+).
-                        // 4408 is bootstrap_timeout (client-initiated transient failure) — treat as recoverable.
+                        // Two 4400+ codes are transient/recoverable, not real rejections:
+                        // - 4408 bootstrap_timeout (client-initiated transient failure)
+                        // - 4402 auth_token_expired: the token simply aged out; the reconnect
+                        //   path refreshes it (resolveToken) and only logs out if the refresh
+                        //   token itself is dead. Logging the user out here is wrong.
                         const authish = evt.code >= 4400
                         const isBootstrapTimeout = evt.code === 4408
-                        const isRecoverable = !authish || isBootstrapTimeout
+                        const isTokenExpired = evt.code === 4402
+                        const isRecoverable = !authish || isBootstrapTimeout || isTokenExpired
 
                         state.value = isRecoverable
                             ? (opened ? SocketState.IDLE : SocketState.ERROR)

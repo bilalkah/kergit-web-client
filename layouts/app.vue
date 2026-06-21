@@ -169,9 +169,12 @@ const showDisconnect = computed(() => {
   const code = socket.lastClose.value?.code
   if (typeof code !== 'number') return false
   // Show disconnect screen only for real auth rejections (4400+).
-  // Exclude 4408 (bootstrap_timeout): that is a transient client-side timeout handled by reconnect.
-  // Code 1006 closes (idle timeout, TCP reset) are also transient and should reconnect silently.
-  return code >= 4400 && code !== 4408
+  // Exclude transient 4400+ codes handled by reconnect:
+  // - 4408 bootstrap_timeout (client-side timeout)
+  // - 4402 auth_token_expired (reconnect refreshes the token; only a dead refresh
+  //   token logs the user out, from within the reconnect path)
+  // Code 1006 closes (idle timeout, TCP reset) are also transient and reconnect silently.
+  return code >= 4400 && code !== 4408 && code !== 4402
 })
 const disconnectTitle = computed(() => {
   const reason = socket.lastClose.value?.reason
