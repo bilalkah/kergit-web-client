@@ -720,8 +720,14 @@ export function hasDesiredVoiceTransport() {
  * No-op when there is no active voice transport.
  */
 export async function rotateVoiceKey(e2eeKey: string, keyIndex: number) {
-    if (!state.room) {
-        devWarn("[voice] rotateVoiceKey skipped — no active room");
+    // Gate on the desired-session intent, not on state.room. The key provider is
+    // created (and the room constructed) inside connectOnce; a VOICE_KEY_UPDATE can
+    // arrive in the window after setupE2EE() but before state.room is assigned. Keys
+    // set on the provider before the Room exists are replayed by LiveKit's E2eeManager
+    // on init, so applying here is safe and avoids silently dropping a rotation.
+    // applyE2EEKey() itself no-ops when no provider is active yet.
+    if (!state.desired) {
+        devWarn("[voice] rotateVoiceKey skipped — no desired voice session");
         return;
     }
     await applyE2EEKey(e2eeKey, keyIndex);
