@@ -15,6 +15,7 @@ import {
     hasDesiredVoiceTransport,
     leaveVoice as livekitLeaveVoice,
     releaseVoiceTransportForServerTransition,
+    rotateVoiceKey as livekitRotateVoiceKey,
     setDeafened as livekitSetDeafened,
     setMicrophoneMuted as livekitSetMicrophoneMuted,
     teardownVoiceSync,
@@ -492,7 +493,8 @@ export function useWebSocket() {
         hubId: string,
         channelId: string,
         e2eeKey?: string,
-        livekitUrl?: string
+        livekitUrl?: string,
+        e2eeKeyIndex?: number
     ) {
         if (!import.meta.client) return
         const resolvedLivekitUrl = livekitUrl ?? ''
@@ -510,6 +512,7 @@ export function useWebSocket() {
                 sessionId,
                 livekitUrl: resolvedLivekitUrl,
                 e2eeKey,
+                e2eeKeyIndex,
                 onEncryptionError: async () => {
                     if (sessionId !== voiceSession.id) return
                     if (voiceSession.leaveInFlight) return
@@ -2482,7 +2485,8 @@ export function useWebSocket() {
                     voiceSession.hubId,
                     voiceSession.channelId,
                     issued.e2ee_key,
-                    issued.livekit_url
+                    issued.livekit_url,
+                    issued.key_index
                 )
                 devLog('[voice] token issued', {
                     tabInstanceId: voiceTabInstanceId,
@@ -2494,6 +2498,21 @@ export function useWebSocket() {
                     channelId: voiceSession.channelId,
                     hasResumeId: Boolean(issued.resume_id),
                 })
+                return
+            }
+            case EnvelopeType.VOICE_KEY_UPDATE: {
+                const update = protoService.decodeVoiceKeyUpdate(env.payload ?? new Uint8Array())
+                const updHubId = update.channel?.hub_id ?? ''
+                const updChannelId = update.channel?.channel_id ?? ''
+                // Only apply to our active voice session's channel.
+                if (!voiceSession.active ||
+                    updHubId !== voiceSession.hubId ||
+                    updChannelId !== voiceSession.channelId) {
+                    return
+                }
+                if (!update.e2ee_key) return
+                void livekitRotateVoiceKey(update.e2ee_key, update.key_index ?? 0)
+                devLog('[voice] e2ee key rotated', { keyIndex: update.key_index ?? 0 })
                 return
             }
             default:

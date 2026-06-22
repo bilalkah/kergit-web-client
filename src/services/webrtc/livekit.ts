@@ -43,7 +43,7 @@ import {
     userFacingVoiceConnectError,
     userFacingVoiceEncryptionError,
 } from "@/src/services/webrtc/errors";
-import { resetE2EEKeyProvider, setupE2EE } from "@/src/services/webrtc/e2ee";
+import { applyE2EEKey, resetE2EEKeyProvider, setupE2EE } from "@/src/services/webrtc/e2ee";
 import { startLatencyPolling, stopLatencyPolling } from "@/src/services/webrtc/latency";
 import {
     resetSpeakingUsers,
@@ -81,6 +81,7 @@ type VoiceConnectOptions = {
     sessionId: number;
     livekitUrl: string;
     e2eeKey?: string;
+    e2eeKeyIndex?: number;
     onJoined: () => void | Promise<void>;
     onPermanentDisconnect: (details?: VoiceDisconnectDetails) => void | Promise<void>;
     onRecoverableDisconnect?: (details: VoiceDisconnectDetails) => void | Promise<void>;
@@ -713,6 +714,18 @@ export function hasDesiredVoiceTransport() {
     return state.desired && state.room !== null &&
         state.room.state !== LiveKitConnectionState.Disconnected;
 }
+/**
+ * Apply a server-rotated room key (member joined/left) to the live key provider at its
+ * keyring index. Seamless: LiveKit keeps recent keys so in-flight frames keep decrypting.
+ * No-op when there is no active voice transport.
+ */
+export async function rotateVoiceKey(e2eeKey: string, keyIndex: number) {
+    if (!state.room) {
+        devWarn("[voice] rotateVoiceKey skipped — no active room");
+        return;
+    }
+    await applyE2EEKey(e2eeKey, keyIndex);
+}
 async function connectOnce(sessionId: number, token: string, options: VoiceConnectOptions) {
     await cleanupConnection(true);
     if (!isDesiredSession(sessionId)) return;
@@ -728,7 +741,7 @@ async function connectOnce(sessionId: number, token: string, options: VoiceConne
     if (!options.e2eeKey) {
         throw new Error("missing_e2ee_key");
     }
-    const e2eeOptions = await setupE2EE(options.e2eeKey);
+    const e2eeOptions = await setupE2EE(options.e2eeKey, options.e2eeKeyIndex ?? 0);
     const nextRoom = new Room({
         encryption: e2eeOptions,
         reconnectPolicy: new DefaultReconnectPolicy(),

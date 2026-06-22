@@ -17,6 +17,7 @@ const RtSignal = sercom.protocol.event.RtSignal
 const VoiceTokenIssued = sercom.protocol.event.VoiceTokenIssued
 const VoiceSelfStatus = sercom.protocol.event.VoiceSelfStatus
 const VoiceSelfRevoked = sercom.protocol.event.VoiceSelfRevoked
+const VoiceKeyUpdate = sercom.protocol.event.VoiceKeyUpdate
 
 const Authenticate = sercom.protocol.command.Authenticate
 const AuthType = sercom.protocol.command.AuthType
@@ -266,7 +267,19 @@ export const protoService = {
       livekit_url: string
       expires_in: string
       e2ee_key: string
+      key_index?: number
       resume_id?: string
+    }
+  },
+
+  decodeVoiceKeyUpdate(buf: Uint8Array) {
+    return VoiceKeyUpdate.toObject(VoiceKeyUpdate.decode(buf), toObjectOptions) as {
+      channel?: {
+        hub_id?: string
+        channel_id?: string
+      }
+      e2ee_key: string
+      key_index?: number
     }
   },
 
