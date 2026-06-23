@@ -114,6 +114,12 @@ const MAX_ADDITIONAL_SIMULCAST_LAYERS = 2;
 // Keep recovery snappy for voice UX: 120/240/360ms retry cadence (max ~720ms total).
 const SUBSCRIPTION_RETRY_BASE_DELAY_MS = 120;
 const SUBSCRIPTION_RETRY_MAX_ATTEMPTS = 3;
+// Grace before an encryption error escalates to a full voice transition (drop + rejoin).
+// During a key rotation a remote frame can arrive stamped with the new key index a moment
+// before this client receives the matching VOICE_KEY_UPDATE, which LiveKit surfaces as a
+// (throttled) EncryptionError. The keyring keeps decrypting once the key lands, so these
+// are transient and self-heal — we only escalate if errors persist with no key arriving.
+const ENCRYPTION_ERROR_GRACE_MS = 4000;
 const state: ConnectionState = {
     room: null,
     audioTrack: null,
@@ -147,6 +153,16 @@ const voiceMetrics = {
 
 const screenOptInStartedAtByTrackKey = new Map<string, number>();
 let autoplayUnlockBlocked = false;
+// Pending escalation from a transient EncryptionError to a full voice transition. Cleared
+// when a key is applied (the missing key likely just arrived) or on teardown/reconnect.
+let encryptionEscalationTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearEncryptionEscalation(): void {
+    if (encryptionEscalationTimer) {
+        clearTimeout(encryptionEscalationTimer);
+        encryptionEscalationTimer = null;
+    }
+}
 
 function withAppStore(callback: (app: ReturnType<typeof useAppStore>) => void): void {
     try {
@@ -323,6 +339,7 @@ function releaseConnectionResources(
     releaseLocalVisualMediaTracks();
     state.room = null;
     state.audioTrack = null;
+    clearEncryptionEscalation();
     resetE2EEKeyProvider();
     void destroyKrisp();
     screenMediaAllowedByIdentity.clear();
@@ -731,6 +748,9 @@ export async function rotateVoiceKey(e2eeKey: string, keyIndex: number) {
         return;
     }
     await applyE2EEKey(e2eeKey, keyIndex);
+    // A freshly installed key resolves the MissingKey that triggers rotation-race
+    // encryption errors, so cancel any pending escalation to a drop/rejoin.
+    clearEncryptionEscalation();
 }
 async function connectOnce(sessionId: number, token: string, options: VoiceConnectOptions) {
     await cleanupConnection(true);
@@ -932,6 +952,8 @@ async function connectOnce(sessionId: number, token: string, options: VoiceConne
     };
     const handleReconnected = async () => {
         if (state.room !== nextRoom) return;
+        // A successful transport reconnect clears any stale encryption-error escalation.
+        clearEncryptionEscalation();
         startLatencyPolling(() => state.audioTrack);
         voiceOutputHandler.applySpeakerLevelToRoom(nextRoom);
         syncSpeakingUsersFromParticipants(nextRoom.activeSpeakers);
@@ -1156,13 +1178,29 @@ async function connectOnce(sessionId: number, token: string, options: VoiceConne
     };
     const handleEncryptionError = (error: Error, participant?: Participant) => {
         if (state.room !== nextRoom) return;
-        setVoiceError(userFacingVoiceEncryptionError(error));
-        devError("[voice] encryption error", {
+        // Do NOT tear down on the first error. During a key rotation a remote frame can
+        // arrive stamped with the new key index a moment before this client receives the
+        // matching VOICE_KEY_UPDATE; LiveKit surfaces that as a (throttled) EncryptionError
+        // even though the keyring self-heals once the key lands. Dropping here caused the
+        // whole channel to churn (leave + rejoin) on every join/leave. Defer escalation and
+        // let applyE2EEKey() cancel it when the key actually arrives.
+        devWarn("[voice] encryption error (deferring recovery, expected during key rotation)", {
             detail: describeVoiceEncryptionError(error),
             participantIdentity: participant?.identity?.trim() || undefined,
-            error,
+            graceMs: ENCRYPTION_ERROR_GRACE_MS,
         });
-        void options.onEncryptionError?.();
+        if (encryptionEscalationTimer) return; // escalation already scheduled
+        encryptionEscalationTimer = setTimeout(() => {
+            encryptionEscalationTimer = null;
+            if (state.room !== nextRoom) return;
+            setVoiceError(userFacingVoiceEncryptionError(error));
+            devError("[voice] encryption error persisted past grace — escalating to recovery", {
+                detail: describeVoiceEncryptionError(error),
+                participantIdentity: participant?.identity?.trim() || undefined,
+                graceMs: ENCRYPTION_ERROR_GRACE_MS,
+            });
+            void options.onEncryptionError?.();
+        }, ENCRYPTION_ERROR_GRACE_MS);
     };
     const handleAudioPlaybackStatusChanged = () => {
         if (state.room !== nextRoom) return;
