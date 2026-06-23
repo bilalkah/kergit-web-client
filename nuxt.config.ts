@@ -91,5 +91,22 @@ export default defineNuxtConfig({
         '@supabase/storage-js',
       ],
     },
+
+    build: {
+      rollupOptions: {
+        output: {
+          // Split the largest independent vendor libraries out of the single ~6 MB
+          // entry chunk so first load is smaller/parallel and, on redeploy, only the
+          // chunks that actually changed are re-downloaded. Only leaf vendor packages
+          // are split (no app code) to avoid circular-init hazards.
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('livekit-client')) return 'vendor-livekit'
+            if (id.includes('@supabase')) return 'vendor-supabase'
+            if (id.includes('protobufjs') || id.includes('google-protobuf')) return 'vendor-proto'
+          },
+        },
+      },
+    },
   },
 })

@@ -8,6 +8,10 @@ x-web-node: &web-node
     - "3000:3000"
   volumes:
     - ../../..:/app
+  # Auto-recover if the app process exits (crash, OOM) or the host/daemon restarts.
+  # The container's main process is the build+preview, so a restart rebuilds and recovers;
+  # the Caddy maintenance fallback covers users during that window.
+  restart: unless-stopped
 
 services:
   web-node-dev:
@@ -51,7 +55,9 @@ services:
       - |
         set -euo pipefail
         cd /app/clients/web
-        rm -rf .nuxt src/generated/proto
+        # Wipe every previous build artifact so a rebuild can never serve a stale
+        # hashed chunk. .output holds the production server + public/_nuxt assets.
+        rm -rf .nuxt .output src/generated/proto
         pnpm install --frozen-lockfile --reporter=append-only
         ./docker/generate-proto.sh
         NODE_ENV=production pnpm build
