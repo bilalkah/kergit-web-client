@@ -7,6 +7,7 @@ const EnvelopeType = sercom.protocol.Envelope.Type
 
 const Ping = sercom.protocol.command.Ping
 const Pong = sercom.protocol.event.Pong
+const Ack = sercom.protocol.command.Ack
 
 const AuthOk = sercom.protocol.event.AuthOk
 const CommandError = sercom.protocol.event.CommandError
@@ -97,9 +98,12 @@ export const protoService = {
   CommandErrorCode,
 
   decodeEnvelope(buf: Uint8Array) {
-    return Envelope.toObject(Envelope.decode(buf), { bytes: Uint8Array }) as {
+    // `longs: Number` is safe for `seq`: it is a per-connection counter that will not
+    // approach 2^53 within a connection's lifetime.
+    return Envelope.toObject(Envelope.decode(buf), { bytes: Uint8Array, longs: Number }) as {
       version: number
       type: number
+      seq?: number
       payload?: Uint8Array
     }
   },
@@ -110,8 +114,13 @@ export const protoService = {
     ).finish()
   },
 
-  encodePing(): Uint8Array {
-    return Ping.encode(Ping.create({})).finish()
+  encodePing(lastRecvSeq = 0): Uint8Array {
+    return Ping.encode(Ping.create({ last_recv_seq: lastRecvSeq })).finish()
+  },
+
+  // Cumulative acknowledgement of the highest contiguous reliable `seq` received.
+  encodeAck(ackSeq: number): Uint8Array {
+    return Ack.encode(Ack.create({ ack_seq: ackSeq })).finish()
   },
 
   decodePong(buf: Uint8Array) {

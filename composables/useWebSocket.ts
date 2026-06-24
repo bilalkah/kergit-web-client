@@ -59,6 +59,13 @@ const ping = {
     missingSamples: 0
 }
 
+// Reliable-delivery receive state (per connection). `lastRecvSeq` is the highest
+// contiguous Envelope.seq processed so far; it is reset to 0 on every (re)connect
+// because the server assigns sequence numbers per connection.
+const reliable = {
+    lastRecvSeq: 0
+}
+
 const PING_INTERVAL_MS = 1000
 const PING_TIMEOUT_MS = 4000
 const PING_WINDOW_SIZE = 8
@@ -1172,7 +1179,8 @@ export function useWebSocket() {
         pruneStalePings(nowMs)
         if (ping.pendingSentAtMs !== null) return
 
-        const pingBytes = protoService.encodePing()
+        // Carry the cumulative ack as a backstop in case a dedicated ACK frame was lost.
+        const pingBytes = protoService.encodePing(reliable.lastRecvSeq)
         const envelopeBytes = protoService.encodeEnvelope(EnvelopeType.PING as number, pingBytes)
         const sent = sendEnvelope(envelopeBytes)
         if (!sent) return
@@ -1185,6 +1193,18 @@ export function useWebSocket() {
                 ping.rttMs.value = null
             }, 15000)
         }
+    }
+
+    // Immediately acknowledge reliable delivery up to `ackSeq` (cumulative). Sent the
+    // moment a sequenced frame is accepted so the server clears its retransmit buffer
+    // without waiting for the next heartbeat. Best-effort: if the socket can't send now,
+    // the heartbeat backstop (Ping.last_recv_seq) will reconcile shortly after.
+    function sendAck(ackSeq: number) {
+        if (!socket.value || socket.value.readyState !== WebSocket.OPEN) return
+        const { EnvelopeType } = protoService
+        const ackBytes = protoService.encodeAck(ackSeq)
+        const envelopeBytes = protoService.encodeEnvelope(EnvelopeType.ACK as number, ackBytes)
+        sendEnvelope(envelopeBytes)
     }
 
     function startPingLoop() {
@@ -1412,6 +1432,9 @@ export function useWebSocket() {
                         devLog('[socket] transport connected, sending explicit auth')
                         state.value = SocketState.CONNECTING
                         lastClose.value = null
+                        // New connection => server restarts reliable seq at 1; reset our
+                        // contiguous receive cursor so we accept it from the start.
+                        reliable.lastRecvSeq = 0
                         clearReconnectState()
                         resetReconnectAttempts()
                         startAuthOkTimeout()
@@ -1440,10 +1463,16 @@ export function useWebSocket() {
                         // - 4402 auth_token_expired: the token simply aged out; the reconnect
                         //   path refreshes it (resolveToken) and only logs out if the refresh
                         //   token itself is dead. Logging the user out here is wrong.
+                        // - 4409 reliable_ack_timeout / reliable_buffer_overflow: the
+                        //   server dropped us because a reliable frame went unacked or the
+                        //   retransmit buffer overflowed. Reconnecting triggers a fresh
+                        //   state sync, which is exactly the intended recovery.
                         const authish = evt.code >= 4400
                         const isBootstrapTimeout = evt.code === 4408
                         const isTokenExpired = evt.code === 4402
-                        const isRecoverable = !authish || isBootstrapTimeout || isTokenExpired
+                        const isReliabilityDrop = evt.code === 4409
+                        const isRecoverable =
+                            !authish || isBootstrapTimeout || isTokenExpired || isReliabilityDrop
 
                         state.value = isRecoverable
                             ? (opened ? SocketState.IDLE : SocketState.ERROR)
@@ -2161,6 +2190,30 @@ export function useWebSocket() {
         ])
         // Decode envelope (SYNC, takes Uint8Array)
         const env = protoService.decodeEnvelope(new Uint8Array(data))
+
+        // Reliable-delivery gate. Sequenced frames (seq > 0) are processed strictly in
+        // contiguous order and acknowledged immediately so the server can drop them from
+        // its retransmit buffer. Duplicates and post-gap frames are NOT processed; we
+        // re-ack the contiguous high-water mark so the server stops resending a delivered
+        // frame or retransmits the missing one.
+        const seq = env.seq ?? 0
+        if (seq > 0) {
+            if (seq === reliable.lastRecvSeq + 1) {
+                reliable.lastRecvSeq = seq
+                sendAck(seq)
+                // fall through and process this frame
+            } else if (seq <= reliable.lastRecvSeq) {
+                // Duplicate retransmit of an already-applied frame.
+                sendAck(reliable.lastRecvSeq)
+                return
+            } else {
+                // Gap: an earlier reliable frame was missed. Drop this out-of-order frame
+                // and ack the high-water so the server retransmits from the hole in order.
+                devWarn('[socket] reliable gap', { got: seq, expected: reliable.lastRecvSeq + 1 })
+                sendAck(reliable.lastRecvSeq)
+                return
+            }
+        }
 
         if (env.type === EnvelopeType.AUTH) {
             // AUTH may be sent by some transport paths; only drive bootstrap flow
