@@ -56,7 +56,8 @@ const ping = {
     timeoutId: null as number | null,
     windowMs: [] as number[],
     emaMs: null as number | null,
-    missingSamples: 0
+    // Reactive so connectionQuality recomputes as pongs are missed/received.
+    missingSamples: ref(0)
 }
 
 // Reliable-delivery receive state (per connection). `lastRecvSeq` is the highest
@@ -66,10 +67,18 @@ const reliable = {
     lastRecvSeq: 0
 }
 
-const PING_INTERVAL_MS = 1000
+// App-level PING is the single liveness + health signal. Foreground pings often (snappy
+// RTT display + fast problem detection); background pings rarely (the user isn't looking,
+// and it avoids unnecessary traffic / churn). The server's liveness timeout (~75s)
+// tolerates the slow background cadence.
+const PING_INTERVAL_FOREGROUND_MS = 5000
+const PING_INTERVAL_BACKGROUND_MS = 30000
 const PING_TIMEOUT_MS = 4000
 const PING_WINDOW_SIZE = 8
-const PING_MAX_MISSING_SAMPLES = 10
+// Consecutive unanswered pings (socket still open) before we (a) warn the user the
+// connection is degraded, then (b) give up on the half-dead socket and reconnect.
+const PING_DEGRADED_MISSES = 2
+const PING_RECONNECT_MISSES = 3
 
 const reauth = {
     timeoutId: null as number | null,
@@ -92,6 +101,36 @@ const reconnect = {
     enabled: true,
     inSeconds: ref<number | null>(null)
 }
+
+export enum ConnectionQuality {
+    Good,
+    Fair,
+    Poor,
+    Degraded,
+    Reconnecting,
+    Offline,
+}
+
+// Single source of truth for the health badge. Derived entirely from the client's own
+// PING roundtrips (not pushed by the server): the absence of pongs IS the problem signal,
+// so it can never go silently stale.
+const connectionQuality = computed<ConnectionQuality>(() => {
+    if (state.value !== SocketState.READY) {
+        // Not connected: reconnecting if a retry is pending/counting down, else offline.
+        if (reconnect.timeoutId !== null || reconnect.inSeconds.value !== null) {
+            return ConnectionQuality.Reconnecting
+        }
+        if (state.value === SocketState.CONNECTING) return ConnectionQuality.Reconnecting
+        return ConnectionQuality.Offline
+    }
+    // Socket open but pongs stopped → degraded (shown before the socket formally closes).
+    if (ping.missingSamples.value >= PING_DEGRADED_MISSES) return ConnectionQuality.Degraded
+    const rtt = ping.rttMs.value
+    if (rtt === null) return ConnectionQuality.Good  // just connected; RTT not measured yet
+    if (rtt < 150) return ConnectionQuality.Good
+    if (rtt < 500) return ConnectionQuality.Fair
+    return ConnectionQuality.Poor
+})
 
 const voiceSession = {
     id: 0,
@@ -893,37 +932,69 @@ export function useWebSocket() {
 
     function stopPingLoop() {
         if (ping.intervalId) {
-            clearInterval(ping.intervalId)
+            clearTimeout(ping.intervalId)
             ping.intervalId = null
         }
         if (ping.timeoutId) {
             clearTimeout(ping.timeoutId)
             ping.timeoutId = null
         }
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', onPingVisibilityChange)
+        }
         ping.pendingSentAtMs = null
         ping.windowMs = []
         ping.emaMs = null
-        ping.missingSamples = 0
+        ping.missingSamples.value = 0
         ping.rttMs.value = null
     }
 
     function pruneStalePings(nowMs: number) {
         if (ping.pendingSentAtMs !== null && nowMs - ping.pendingSentAtMs > PING_TIMEOUT_MS) {
             ping.pendingSentAtMs = null
-            ping.missingSamples += 1
-            if (ping.emaMs !== null && ping.missingSamples <= PING_MAX_MISSING_SAMPLES) {
+            ping.missingSamples.value += 1
+            // While only briefly missing, keep showing the last good RTT; once degraded,
+            // null it so the badge reads "not responding" instead of a stale-but-fine value.
+            if (ping.emaMs !== null && ping.missingSamples.value < PING_DEGRADED_MISSES) {
                 ping.rttMs.value = Math.round(ping.emaMs)
             } else {
                 ping.rttMs.value = null
             }
+            // Socket still "open" but pongs stopped → half-dead. Don't wait for the OS/
+            // proxy/server (~75s) timeout; proactively close so onclose reconnects + resyncs.
+            if (ping.missingSamples.value >= PING_RECONNECT_MISSES && socket.value) {
+                devWarn('[socket] heartbeat unanswered, forcing reconnect',
+                    ping.missingSamples.value)
+                try {
+                    socket.value.close(1000, 'heartbeat_timeout')
+                } catch {
+                    // ignore
+                }
+            }
         }
+    }
+
+    // Returning to the foreground: if the socket died while we were frozen/backgrounded
+    // (server may have reaped us), reconnect now; otherwise ping immediately for a fresh
+    // RTT and to prove liveness right away, then resume the foreground cadence.
+    function onPingVisibilityChange() {
+        if (typeof document === 'undefined' || document.visibilityState !== 'visible') return
+        if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
+            if (reconnect.enabled && state.value !== SocketState.CONNECTING) {
+                resetReconnectAttempts()
+                scheduleReconnect('visible')
+            }
+            return
+        }
+        void sendPing().catch(() => {})
+        scheduleNextPing()
     }
 
     function observePingSample(rawRttMs: number) {
         const sampleMs = Math.round(rawRttMs)
         if (!Number.isFinite(sampleMs) || sampleMs <= 0 || sampleMs > 10000) return
 
-        ping.missingSamples = 0
+        ping.missingSamples.value = 0
         ping.windowMs.push(sampleMs)
         if (ping.windowMs.length > PING_WINDOW_SIZE) {
             ping.windowMs.shift()
@@ -1207,17 +1278,32 @@ export function useWebSocket() {
         sendEnvelope(envelopeBytes)
     }
 
+    // Self-rescheduling so the cadence can adapt to tab visibility (fast in foreground,
+    // slow in background) rather than a fixed setInterval.
+    function scheduleNextPing() {
+        if (typeof window === 'undefined') return
+        if (ping.intervalId) {
+            clearTimeout(ping.intervalId)
+            ping.intervalId = null
+        }
+        const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+        const delay = hidden ? PING_INTERVAL_BACKGROUND_MS : PING_INTERVAL_FOREGROUND_MS
+        ping.intervalId = window.setTimeout(() => {
+            ping.intervalId = null
+            void sendPing()
+                .catch((err) => devError('[socket] ping failed', err))
+                .finally(scheduleNextPing)
+        }, delay)
+    }
+
     function startPingLoop() {
         if (typeof window === 'undefined') return
         stopPingLoop()
-        ping.intervalId = window.setInterval(() => {
-            void sendPing().catch((err) => {
-                devError('[socket] ping failed', err)
-            })
-        }, PING_INTERVAL_MS)
-        void sendPing().catch((err) => {
-            devError('[socket] ping failed', err)
-        })
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', onPingVisibilityChange)
+        }
+        void sendPing().catch((err) => devError('[socket] ping failed', err))
+        scheduleNextPing()
     }
 
     async function sendReauth(token: string) {
@@ -2636,6 +2722,7 @@ export function useWebSocket() {
         state,
         authState,
         pingMs: ping.rttMs,
+        connectionQuality,
         connected,
         lastClose,
         reconnectIn: reconnect.inSeconds
